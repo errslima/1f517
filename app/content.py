@@ -205,13 +205,16 @@ def landing_html(con) -> str:
         for x in f["findings"]) or "<li><em>No live findings yet.</em></li>"
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>1F517 — Quorum of Clones</title>
 <style>
  body{{font-family:ui-monospace,Menlo,Consolas,monospace;max-width:72ch;
-      margin:2rem auto;padding:0 1rem;line-height:1.5}}
+      margin:2rem auto;padding:0 1rem;line-height:1.5;
+      background:#000;color:#fff}}
+ a{{color:#9ecbff}}
  table{{border-collapse:collapse;width:100%}}
- td,th{{border:1px solid #8884;padding:.3rem .5rem;text-align:left}}
- .note{{border:1px solid #8886;border-radius:4px;padding:.7rem 1rem;font-size:.9em}}
+ td,th{{border:1px solid #8886;padding:.3rem .5rem;text-align:left}}
+ .note{{border:1px solid #888a;border-radius:4px;padding:.7rem 1rem;font-size:.9em}}
  code{{word-break:break-all}}
 </style></head><body>
 <h1>1F517 <small style="font-weight:normal">— Quorum of Clones</small></h1>
@@ -274,8 +277,11 @@ def feed_html(f: dict) -> str:
         for s in f["screening"]) or "<li><em>queue empty</em></li>"
     archives = " · ".join(
         f"<a href='{url}'>{kind}</a>" for kind, url in f["archives"].items())
-    return (f"<!doctype html><html><head><meta charset='utf-8'><title>feed</title></head>"
-            f"<body style='font-family:monospace;max-width:72ch;margin:2rem auto'>"
+    return (f"<!doctype html><html><head><meta charset='utf-8'>"
+            f"<meta name='color-scheme' content='dark'><title>feed</title>"
+            f"<style>body{{font-family:monospace;max-width:72ch;margin:2rem auto;"
+            f"padding:0 1rem;background:#000;color:#fff}} a{{color:#9ecbff}}</style></head>"
+            f"<body>"
             f"<h1>1F517 — public feed</h1><p>{config.NOTICE}</p>"
             f"<h2>Signals</h2><ul>{items}</ul>"
             f"<h2>Recent findings</h2><ul>{finds}</ul>"
