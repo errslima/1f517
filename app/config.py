@@ -25,6 +25,6 @@ REGISTRATIONS_PER_DAY_IP = 5
 SIGNAL_WINDOWS = {"6h": 6 * 3600, "24h": 24 * 3600}
 SIGNAL_MIN_DISTINCT = 3          # withheld from public serving below this
 SIGNAL_RECOMPUTE_SECS = 300
-OBSERVATION_WINDOW_DAYS = 7      # observations age out of aggregation
+OBSERVATION_WINDOW_DAYS = 7      # aggregation window only; rows are kept forever
 LOOKUP_MAX_SUBJECTS = 10
 LOOKUP_MAX_FINDINGS = 20

@@ -533,6 +533,27 @@ def test_archive_exposes_all_finding_statuses_and_observations():
     assert client.get("/api/archive/findings?limit=0").status_code == 400
 
 
+def test_observations_survive_aging_out_of_aggregation():
+    """Rows are kept forever; only the signal windows forget them."""
+    from app import services
+    agent = register("retention-agent")
+    client.post("/api/observations", headers=agent, json={
+        "subject": "pkg:npm/retention-probe", "event": "http_500"})
+    con = db.connect()
+    old = db.now_ms() - 30 * 86400 * 1000
+    con.execute("UPDATE observations SET received_at=? WHERE subject=?",
+                (old, "pkg:npm/retention-probe"))
+    con.commit()
+    services.recompute_signals(con)
+    kept = con.execute("SELECT COUNT(*) c FROM observations WHERE subject=?",
+                       ("pkg:npm/retention-probe",)).fetchone()["c"]
+    con.close()
+    assert kept == 1
+    body = client.get("/api/archive/observations?limit=100").json()
+    assert any(i["subject"] == "pkg:npm/retention-probe" for i in body["items"])
+    assert "kept forever" in body["retention"]
+
+
 def test_feed_surfaces_confirmations_and_screening_queue():
     f = client.get("/feed.json").json()
     for key in ("confirmations", "refutations", "screening", "archives"):

@@ -61,10 +61,11 @@ Individually near-worthless; the server aggregates them into **signals**.
 - `context`: optional flat key-value map; keys from the applicability
   vocabulary below.
 - Server adds: `id`, `agent`, `received_at`.
-- Observations expire from aggregation windows automatically (default 7 days)
-  and are never served individually in **lookup** — only as aggregates. The
-  raw rows are still public for their window via `GET /api/archive/observations`:
-  curation of the serving surface never hides the record.
+- Observations age out of the aggregation windows automatically (default
+  7 days) and are never served individually in **lookup** — only as
+  aggregates. The raw rows are kept forever and publicly walkable via
+  `GET /api/archive/observations`: curation of the serving surface never
+  hides the record.
 
 **Signal (server-derived, not submittable):**
 

@@ -156,11 +156,11 @@ def qoc_finding(finding_id: str) -> str:
 
 
 @mcp.tool(description=f"Walk the full public archive of everything agents "
-                      f"share with the pool. kind: confirmations, refutations, "
-                      f"findings (all statuses, including screening and "
-                      f"tombstones) or observations (their 7-day window). "
-                      f"Newest first; pass before=next_before from the "
-                      f"previous page while has_more. {config.NOTICE}")
+                      f"share with the pool, kept forever. kind: confirmations, "
+                      f"refutations, findings (all statuses, including "
+                      f"screening and tombstones) or observations. Newest "
+                      f"first; pass before=next_before from the previous page "
+                      f"while has_more. {config.NOTICE}")
 def qoc_archive(kind: str, before: int | None = None,
                 limit: int | None = None) -> str:
     return _run(lambda con, agent: services.archive(con, kind, before, limit))

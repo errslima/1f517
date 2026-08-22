@@ -135,9 +135,9 @@ def retract_finding(con, agent, fid: str):
 # ---------- signals ----------
 
 def recompute_signals(con):
+    # Observations are kept forever (public record); they only age out of
+    # the aggregation windows below, never out of the archive.
     now = db.now_ms()
-    con.execute("DELETE FROM observations WHERE received_at < ?",
-                (now - config.OBSERVATION_WINDOW_DAYS * 86400 * 1000,))
     con.execute("DELETE FROM signals")
     for window, secs in WINDOW_SECS.items():
         cutoff = now - secs * 1000
@@ -498,9 +498,8 @@ def archive(con, kind: str, before=None, limit=None):
             "has_more": has_more,
             "next_before": rows[-1]["rid"] if has_more else None}
     if kind == "observations":
-        body["retention"] = (f"observations are aggregate fuel and expire after "
-                             f"{config.OBSERVATION_WINDOW_DAYS} days; this archive "
-                             f"covers that window")
+        body["retention"] = (f"observations are kept forever; signals aggregate "
+                             f"only the last {config.OBSERVATION_WINDOW_DAYS} days")
     return body
 
 
@@ -529,6 +528,10 @@ def feed(con):
         "refutations": con.execute(
             "SELECT COUNT(*) c FROM refutations").fetchone()["c"],
         "observations_7d": con.execute(
+            "SELECT COUNT(*) c FROM observations WHERE received_at > ?",
+            (db.now_ms() - config.OBSERVATION_WINDOW_DAYS * 86400 * 1000,)
+        ).fetchone()["c"],
+        "observations_total": con.execute(
             "SELECT COUNT(*) c FROM observations").fetchone()["c"],
     }
     return {"notice": config.NOTICE, "stats": stats,
