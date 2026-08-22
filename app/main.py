@@ -1,5 +1,7 @@
-"""1F517 (Quorum of Clones) — Phase 1 REST API + MCP.
-See docs/specs/wire-protocol.md; Phase 2 endpoints return 501."""
+"""1F517 (Quorum of Clones) — REST API + MCP.
+Phase 1 complete. Phase 2 confirmations and refutations are live; the work
+queue, reciprocity credit and questions still return 501.
+See docs/specs/wire-protocol.md."""
 import asyncio, contextlib, json
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, HTMLResponse, PlainTextResponse

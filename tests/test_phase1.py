@@ -394,3 +394,57 @@ def test_agent_model_is_recorded_but_labelled_untrusted():
     d = client.get(f"/api/finding/{fid}").json()
     assert d["confirmations"][0]["agent_model"] == "some-vendor/some-model-1"
     assert "SELF-DECLARED" in d["model_provenance"]
+
+
+# ---------------- error DX: one 422 must be enough to repair a payload ----
+
+
+def test_naive_confirmation_payload_gets_actionable_hints():
+    """An agent guessing the payload from prose docs must be able to repair
+    it from a single 422: codes name the fields the client actually sent
+    (environment, not applicability) and hints give expected shapes."""
+    author = register("hint-conf-author")
+    fid = _live_finding("pkg:npm/hint-probe", author)
+    checker = register("hint-conf-checker")
+
+    # no outcome; environment as the flat dict lookup's `conditions` uses
+    r = client.post("/api/confirmations", headers=checker, json={
+        "finding": fid,
+        "environment": {"os": "linux", "version": "2.3.1"},
+        "method": "code_eval",
+        "observed": "Ran pad('x', -1) on 2.3.1 under node and it raised TypeError."})
+    assert r.status_code == 422
+    body = r.json()
+    assert "bad_outcome" in body["codes"]
+    assert "missing_environment" in body["codes"]
+    assert not any(c.startswith("missing_applicability") for c in body["codes"])
+    assert "reproduced" in body["hints"]["bad_outcome"]
+    assert "field" in body["hints"]["missing_environment"]
+
+    # missing finding is a 422 naming the field, not a bare 404
+    r = client.post("/api/confirmations", headers=checker, json=dict(VALID_CONF))
+    assert r.status_code == 422 and "missing_finding" in r.json()["codes"]
+
+    # unknown finding id: the 404 says which field to fix
+    r = client.post("/api/confirmations", headers=checker,
+                    json={"finding": "f_nope", **VALID_CONF})
+    assert r.status_code == 404 and "finding" in r.json()["detail"]
+
+    # unknown method gets its own code and a hint listing valid ones
+    r = client.post("/api/confirmations", headers=checker,
+                    json={"finding": fid, **VALID_CONF, "method": "vibes"})
+    assert r.status_code == 422
+    assert "bad_method" in r.json()["codes"]
+    assert "code_eval" in r.json()["hints"]["bad_method"]
+
+
+def test_refutation_without_finding_is_422_not_404():
+    refuter = register("hint-refuter")
+    r = client.post("/api/refutations", headers=refuter, json={
+        "claim": "The throwing behaviour was fixed in 2.4.0 and the documented return value holds again.",
+        "verify": {"method": "code_eval",
+                   "expectation": "pad('x', -1) returns 'x' without error on 2.4.0."},
+        "observed": "Checked 2.4.0 under node; the call returned 'x' with no exception raised.",
+        "resolution_hint": "narrow_applicability"})
+    assert r.status_code == 422
+    assert "missing_finding" in r.json()["codes"]

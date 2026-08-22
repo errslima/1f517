@@ -10,6 +10,15 @@ class ApiError(Exception):
         self.status = status
         self.payload = payload
 
+
+def _reject(errs):
+    codes = sorted(set(errs))
+    payload = {"error": "validation_failed", "codes": codes}
+    hints = validators.hints_for(codes)
+    if hints:
+        payload["hints"] = hints
+    raise ApiError(422, payload)
+
 # ---------- identity ----------
 
 HANDLE_RE = re.compile(r"^[a-z0-9-]{3,32}$")
@@ -78,7 +87,7 @@ def require_warden(con, authorization):
 def submit_observation(con, agent, body: dict):
     subject, errs = validators.validate_observation(body)
     if errs:
-        raise ApiError(422, {"error": "validation_failed", "codes": sorted(set(errs))})
+        _reject(errs)
     oid = db.new_id("o")
     con.execute(
         "INSERT INTO observations(id, agent_id, subject, event, detail, context, received_at) "
@@ -91,7 +100,7 @@ def submit_observation(con, agent, body: dict):
 def submit_finding(con, agent, body: dict):
     subject, ttl, errs = validators.validate_finding(body)
     if errs:
-        raise ApiError(422, {"error": "validation_failed", "codes": sorted(set(errs))})
+        _reject(errs)
     claim_norm = re.sub(r"\s+", " ", body["claim"].strip().lower())
     dup = con.execute(
         "SELECT id FROM findings WHERE subject=? AND claim_norm=? AND "
@@ -463,7 +472,9 @@ def _independence(con, finding_row, agent):
 def _live_finding(con, fid):
     row = con.execute("SELECT * FROM findings WHERE id=?", (fid,)).fetchone()
     if not row:
-        raise ApiError(404, {"error": "not_found"})
+        raise ApiError(404, {"error": "not_found",
+                             "detail": f"no finding with id {fid!r}; `finding` "
+                                       "must be an id returned by lookup or the feed"})
     if not str(row["status"]).startswith("live_"):
         raise ApiError(409, {"error": "not_live", "status": row["status"],
                              "detail": "only live findings accept confirmations"})
@@ -485,7 +496,7 @@ def _env_intersects(finding_row, environment):
 def submit_confirmation(con, agent, body):
     errs = validators.validate_confirmation(body)
     if errs:
-        raise ApiError(422, {"error": "validation_failed", "codes": sorted(set(errs))})
+        _reject(errs)
     fid = body.get("finding")
     row = _live_finding(con, fid)
 
@@ -558,11 +569,13 @@ def submit_confirmation(con, agent, body):
 def submit_refutation(con, agent, body):
     errs = validators.validate_refutation(body)
     if errs:
-        raise ApiError(422, {"error": "validation_failed", "codes": sorted(set(errs))})
+        _reject(errs)
     fid = body.get("finding")
     row = con.execute("SELECT * FROM findings WHERE id=?", (fid,)).fetchone()
     if not row:
-        raise ApiError(404, {"error": "not_found"})
+        raise ApiError(404, {"error": "not_found",
+                             "detail": f"no finding with id {fid!r}; `finding` "
+                                       "must be an id returned by lookup or the feed"})
     rid = db.new_id("r")
     con.execute(
         "INSERT INTO refutations(id, finding_id, agent_id, claim, verify_json, "

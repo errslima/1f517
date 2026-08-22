@@ -66,22 +66,27 @@ def lint_prose(text: str, field: str, max_len: int, urls_allowed: bool = False):
     return errs
 
 
-def validate_applicability(app_list):
+def validate_applicability(app_list, field_name="applicability"):
+    """`field_name` keeps error codes pointing at the field the caller
+    actually sent: a confirmation's environment failing as
+    `missing_applicability` sends agents hunting for a field that does not
+    exist on confirmations."""
+    code = f"missing_{field_name}"
     if not isinstance(app_list, list) or len(app_list) == 0:
-        return ["missing_applicability"]
+        return [code]
     errs = []
     for i, entry in enumerate(app_list):
         if not isinstance(entry, dict):
-            errs.append("missing_applicability"); continue
+            errs.append(code); continue
         if entry.get("field") not in config.APPLICABILITY_FIELDS:
-            errs.append(f"missing_applicability:bad_field:{entry.get('field')}")
+            errs.append(f"{code}:bad_field:{entry.get('field')}")
         if entry.get("op") not in config.APPLICABILITY_OPS:
-            errs.append(f"missing_applicability:bad_op:{entry.get('op')}")
+            errs.append(f"{code}:bad_op:{entry.get('op')}")
         v = entry.get("value")
         if v is None or (isinstance(v, str) and not v.strip()):
-            errs.append("missing_applicability:empty_value")
+            errs.append(f"{code}:empty_value")
         if isinstance(v, str):
-            errs += lint_prose(v, f"applicability[{i}].value", 200)
+            errs += lint_prose(v, f"{field_name}[{i}].value", 200)
     return errs
 
 
@@ -151,6 +156,45 @@ def validate_finding(body: dict):
 OUTCOMES = {"reproduced", "not_reproduced", "inapplicable"}
 RESOLUTION_HINTS = {"retract", "narrow_applicability", "expired_only"}
 
+# Per-code guidance included in 422 bodies. A hint that names the expected
+# shape ends the probing loop after one round-trip.
+HINTS = {
+    "missing_finding": "finding: id of an existing live finding, e.g. \"f_...\" from lookup",
+    "bad_outcome": "outcome: one of reproduced | not_reproduced | inapplicable",
+    "missing_environment": "environment: non-empty list of {field, op, value}, "
+                           "e.g. [{\"field\":\"version\",\"op\":\"eq\",\"value\":\"2.3.1\"}]; "
+                           "fields: " + "/".join(sorted(config.APPLICABILITY_FIELDS)) +
+                           "; ops: eq/range/in",
+    "missing_applicability": "applicability: non-empty list of {field, op, value}; "
+                             "fields: " + "/".join(sorted(config.APPLICABILITY_FIELDS)) +
+                             "; ops: eq/range/in",
+    "bad_method": "method: one of " + " | ".join(sorted(config.VERIFY_METHODS)),
+    "missing_observation": "observed: >=20 chars stating what you actually saw when you checked",
+    "bad_resolution_hint": "resolution_hint: one of narrow_applicability | retract | expired_only",
+    "unfalsifiable": "claim must be declarative with no hedges; verify needs method ("
+                     + "/".join(sorted(config.VERIFY_METHODS)) +
+                     ") plus a non-empty expectation; falsified_by is mandatory",
+}
+
+
+def hints_for(codes):
+    """Map validation codes (including suffixed ones like
+    missing_environment:bad_op:x) to the hints we can offer."""
+    out = {}
+    for c in codes:
+        base = c.split(":", 1)[0]
+        hint = HINTS.get(c) or HINTS.get(base)
+        if hint:
+            out[base] = hint
+    return out
+
+
+def _require_finding(body: dict):
+    fid = body.get("finding")
+    if not isinstance(fid, str) or not fid.strip():
+        return ["missing_finding"]
+    return []
+
 
 def validate_confirmation(body: dict):
     """A confirmation must carry what was OBSERVED, not just a verdict.
@@ -162,16 +206,16 @@ def validate_confirmation(body: dict):
     nothing served-side can - but it makes an unevidenced confirmation
     visibly unevidenced, and gives the Warden something to screen.
     """
-    errs = []
+    errs = _require_finding(body)
     if body.get("outcome") not in OUTCOMES:
         errs.append("bad_outcome")
 
     env = body.get("environment")
-    errs += validate_applicability(env)
+    errs += validate_applicability(env, "environment")
 
     method = body.get("method")
     if method not in config.VERIFY_METHODS:
-        errs.append("unfalsifiable:bad_method")
+        errs.append("bad_method")
 
     observed = body.get("observed")
     if not observed or not isinstance(observed, str) or len(observed.strip()) < 20:
@@ -190,7 +234,7 @@ def validate_confirmation(body: dict):
 def validate_refutation(body: dict):
     """A refutation is finding-shaped: same claim discipline, plus the
     observation that motivated it."""
-    errs = []
+    errs = _require_finding(body)
     claim = body.get("claim")
     if not claim or not isinstance(claim, str):
         errs.append("field_too_long:claim")
