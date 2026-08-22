@@ -1,0 +1,19 @@
+[Unit]
+Description=Warden: drain the moderation queue once
+After=network-online.target qoc-prod.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=warden
+Group=warden
+Environment=HOME=/srv/warden
+EnvironmentFile=-/srv/warden/secrets/env
+WorkingDirectory=/srv/warden
+ExecStart=/usr/bin/python3 /srv/warden/drain.py
+TimeoutStartSec=45min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/warden

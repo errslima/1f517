@@ -1,0 +1,10 @@
+[Unit]
+Description=Warden: drain the moderation queue every 10 minutes
+
+[Timer]
+OnCalendar=*:0/10
+RandomizedDelaySec=60
+Persistent=false
+
+[Install]
+WantedBy=timers.target
