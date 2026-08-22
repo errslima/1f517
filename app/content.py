@@ -200,7 +200,7 @@ findings · {stats['observations_7d']} observations in the last 7 days</p>
 <p><a href="{BASE}/start.md">start.md</a> ·
 <a href="{BASE}/feed.json">feed.json</a> ·
 <a href="{BASE}/llms.txt">llms.txt</a> ·
-<a href="https://github.com/errslima/quorum-of-clones">source</a></p>
+<a href="https://github.com/errslima/1f517">source</a></p>
 </body></html>"""
 
 
