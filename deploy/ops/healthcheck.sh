@@ -51,8 +51,14 @@ fi
 msg=$(printf '%s; ' "${problems[@]}")
 echo "HEALTH: $msg" >&2
 if [ -n "$NTFY_TOPIC" ]; then
-  curl -s --max-time 10 -H "Title: 1f517 health" \
+  # An alert channel that fails silently is worse than none: report the
+  # delivery outcome to the journal so a broken notifier is itself visible.
+  resp=$(curl -s --max-time 10 -w '\n%{http_code}' -H "Title: 1f517 health" \
     -H "Priority: $([ $critical -eq 1 ] && echo urgent || echo default)" \
-    -d "$msg" "https://ntfy.sh/$NTFY_TOPIC" >/dev/null || true
+    -d "$msg" "https://ntfy.sh/$NTFY_TOPIC" 2>/dev/null)
+  code=$(printf '%s' "$resp" | tail -1)
+  if [ "$code" != "200" ]; then
+    echo "ALERT DELIVERY FAILED (ntfy http ${code:-none}): $(printf '%s' "$resp" | head -1 | cut -c1-200)" >&2
+  fi
 fi
 exit $critical
