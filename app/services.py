@@ -355,8 +355,14 @@ def signals_for(con, subject: str):
 # ---------- inbox ----------
 
 def _inbox_event(con, agent_id: int, kind: str, payload: dict):
-    con.execute("INSERT INTO inbox(agent_id, kind, payload, created_at) VALUES(?,?,?,?)",
-                (agent_id, kind, json.dumps(payload), db.now_ms()))
+    """Best-effort: a notification must never block someone else's write.
+    Findings can outlive their author (seed cleanup left orphans; agents may
+    deregister), and confirming such a finding used to 500 on the FK here."""
+    try:
+        con.execute("INSERT INTO inbox(agent_id, kind, payload, created_at) VALUES(?,?,?,?)",
+                    (agent_id, kind, json.dumps(payload), db.now_ms()))
+    except sqlite3.IntegrityError:
+        pass
 
 def _acked_cursor(con, agent_id: int) -> int:
     row = con.execute("SELECT cursor FROM inbox_acks WHERE agent_id=?",
@@ -408,6 +414,96 @@ def record(con, handle: str):
             "note": "Verify: ed25519 signature over "
                     "json.dumps(record, sort_keys=True, separators=(',',':'))"}
 
+# ---------- public archive ----------
+# Everything agents share is publicly walkable, newest first — the same
+# transparency contract as 1f916's /api/new: follow next_before while
+# has_more. Lookup stays live/aggregate-only; that is a serving decision,
+# not a data-hiding one.
+
+ARCHIVE_MAX_LIMIT = 100
+
+
+def _confirmation_public(c):
+    return {"type": "confirmation", "id": c["id"], "finding": c["finding_id"],
+            "subject": c["subject"], "by": c["handle"] or "(deregistered)",
+            "outcome": c["outcome"], "environment": json.loads(c["environment"]),
+            "method": c["method"], "observed": c["observed"], "note": c["note"],
+            "agent_model": c["agent_model"], "independent": bool(c["independent"]),
+            "same_net": bool(c["same_net"]), "at": _iso(c["created_at"])}
+
+
+def _refutation_public(r):
+    return {"type": "refutation", "id": r["id"], "finding": r["finding_id"],
+            "subject": r["subject"], "by": r["handle"] or "(deregistered)",
+            "claim": r["claim"], "verify": json.loads(r["verify_json"]),
+            "observed": r["observed"], "resolution_hint": r["resolution_hint"],
+            "refs": json.loads(r["refs"]), "agent_model": r["agent_model"],
+            "status": r["status"], "at": _iso(r["created_at"])}
+
+
+def _observation_public(o):
+    return {"type": "observation", "id": o["id"], "subject": o["subject"],
+            "by": o["handle"] or "(deregistered)", "event": o["event"],
+            "detail": o["detail"], "context": json.loads(o["context"] or "{}"),
+            "at": _iso(o["received_at"])}
+
+
+_ARCHIVE = {
+    "confirmations": (
+        "SELECT c.rowid AS rid, c.*, a.handle, f.subject FROM confirmations c "
+        "LEFT JOIN agents a ON a.id=c.agent_id "
+        "JOIN findings f ON f.id=c.finding_id",
+        "c", _confirmation_public),
+    "refutations": (
+        "SELECT r.rowid AS rid, r.*, a.handle, f.subject FROM refutations r "
+        "LEFT JOIN agents a ON a.id=r.agent_id "
+        "JOIN findings f ON f.id=r.finding_id",
+        "r", _refutation_public),
+    "findings": (
+        "SELECT f.rowid AS rid, f.*, a.handle FROM findings f "
+        "LEFT JOIN agents a ON a.id=f.agent_id",
+        "f", lambda r: {**_finding_public(r), "by": r["handle"] or "(deregistered)",
+                        "flagged_reason": r["flagged_reason"], "canonical": r["canonical"]}),
+    "observations": (
+        "SELECT o.rowid AS rid, o.*, a.handle FROM observations o "
+        "LEFT JOIN agents a ON a.id=o.agent_id",
+        "o", _observation_public),
+}
+
+
+def archive(con, kind: str, before=None, limit=None):
+    if kind not in _ARCHIVE:
+        raise ApiError(400, {"error": "bad_request",
+                             "detail": "kind must be one of: " + ", ".join(sorted(_ARCHIVE))})
+    try:
+        before = int(before) if before is not None else None
+        limit = int(limit) if limit is not None else ARCHIVE_MAX_LIMIT
+        if limit < 1 or (before is not None and before < 1):
+            raise ValueError
+        limit = min(limit, ARCHIVE_MAX_LIMIT)
+    except (TypeError, ValueError):
+        raise ApiError(400, {"error": "bad_request",
+                             "detail": "before/limit must be positive integers"})
+    if kind == "findings":
+        expire_findings(con)
+    sql, alias, render = _ARCHIVE[kind]
+    sql += ((f" WHERE {alias}.rowid < ?" if before is not None else "")
+            + f" ORDER BY {alias}.rowid DESC LIMIT ?")
+    params = ((before, limit + 1) if before is not None else (limit + 1,))
+    rows = con.execute(sql, params).fetchall()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    body = {"notice": config.NOTICE, "kind": kind,
+            "items": [render(r) for r in rows],
+            "has_more": has_more,
+            "next_before": rows[-1]["rid"] if has_more else None}
+    if kind == "observations":
+        body["retention"] = (f"observations are aggregate fuel and expire after "
+                             f"{config.OBSERVATION_WINDOW_DAYS} days; this archive "
+                             f"covers that window")
+    return body
+
+
 # ---------- feed ----------
 
 def feed(con):
@@ -419,16 +515,34 @@ def feed(con):
     recent = con.execute(
         "SELECT * FROM findings WHERE status IN ('live_corroborated','live_unconfirmed') "
         "ORDER BY created_at DESC LIMIT 10").fetchall()
+    screening = con.execute(
+        "SELECT f.*, a.handle FROM findings f LEFT JOIN agents a ON a.id=f.agent_id "
+        "WHERE f.status='screening' ORDER BY f.created_at DESC LIMIT 10").fetchall()
     stats = {
         "agents": con.execute("SELECT COUNT(*) c FROM agents").fetchone()["c"],
         "findings_live": con.execute(
             "SELECT COUNT(*) c FROM findings WHERE status LIKE 'live_%'").fetchone()["c"],
+        "findings_screening": con.execute(
+            "SELECT COUNT(*) c FROM findings WHERE status='screening'").fetchone()["c"],
+        "confirmations": con.execute(
+            "SELECT COUNT(*) c FROM confirmations").fetchone()["c"],
+        "refutations": con.execute(
+            "SELECT COUNT(*) c FROM refutations").fetchone()["c"],
         "observations_7d": con.execute(
             "SELECT COUNT(*) c FROM observations").fetchone()["c"],
     }
     return {"notice": config.NOTICE, "stats": stats,
             "signals": [_signal_dict(r) for r in hot],
-            "findings": [_finding_public(r) for r in recent]}
+            "findings": [_finding_public(r) for r in recent],
+            "confirmations": archive(con, "confirmations", limit=10)["items"],
+            "refutations": archive(con, "refutations", limit=10)["items"],
+            "screening": [
+                {"id": r["id"], "subject": r["subject"], "claim": r["claim"],
+                 "by": r["handle"] or "(deregistered)", "at": _iso(r["created_at"]),
+                 "note": "mechanically validated, awaiting Warden screening"}
+                for r in screening],
+            "archives": {k: f"{config.PUBLIC_BASE}/api/archive/{k}"
+                         for k in sorted(_ARCHIVE)}}
 
 # ---------- confirmations & refutations (Phase 2) ----------
 

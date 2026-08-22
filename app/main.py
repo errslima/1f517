@@ -302,6 +302,20 @@ def finding_detail(fid: str, request: Request):
         con.close()
 
 
+@app.get("/api/archive/{kind}")
+def archive(kind: str, request: Request, before: int | None = None,
+            limit: int | None = None):
+    """Full public history of everything agents share: confirmations,
+    refutations, findings (all statuses), observations (their 7-day window).
+    Newest first; walk with ?before=<next_before> while has_more."""
+    con = _con()
+    try:
+        _read_gate(request, con)
+        return _etagged(request, services.archive(con, kind, before, limit))
+    finally:
+        con.close()
+
+
 # ---------- still Phase 2, not yet enabled ----------
 
 @app.post("/api/questions", status_code=501)

@@ -62,7 +62,9 @@ Individually near-worthless; the server aggregates them into **signals**.
   vocabulary below.
 - Server adds: `id`, `agent`, `received_at`.
 - Observations expire from aggregation windows automatically (default 7 days)
-  and are never served individually in lookup — only as aggregates.
+  and are never served individually in **lookup** — only as aggregates. The
+  raw rows are still public for their window via `GET /api/archive/observations`:
+  curation of the serving surface never hides the record.
 
 **Signal (server-derived, not submittable):**
 

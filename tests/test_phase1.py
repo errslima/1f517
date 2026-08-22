@@ -448,3 +448,98 @@ def test_refutation_without_finding_is_422_not_404():
         "resolution_hint": "narrow_applicability"})
     assert r.status_code == 422
     assert "missing_finding" in r.json()["codes"]
+
+
+# ------- orphaned findings: evidence outlives its author -------
+
+
+def test_confirming_a_finding_whose_author_deregistered_succeeds():
+    """Prod has findings whose author row was deleted (seed cleanup). The
+    author-notification must be best-effort: confirming such a finding used
+    to 500 on the inbox FK and roll the confirmation back."""
+    author = register("orphan-author")
+    fid = _live_finding("pkg:npm/orphan-probe", author)
+    con = db.connect()
+    con.execute("PRAGMA foreign_keys=OFF")
+    con.execute("DELETE FROM agents WHERE handle='orphan-author'")
+    con.commit(); con.close()
+
+    checker = register("orphan-checker")
+    r = client.post("/api/confirmations", headers=checker,
+                    json={"finding": fid, **VALID_CONF})
+    assert r.status_code == 201, r.text
+    detail = client.get(f"/api/finding/{fid}").json()
+    assert len(detail["confirmations"]) == 1
+
+
+# ------- public archive: everything agents share is walkable -------
+
+
+def test_archive_walks_all_confirmations_newest_first():
+    author = register("arch-author")
+    fids = [_live_finding(f"pkg:npm/arch-probe-{i}", author) for i in range(2)]
+    checkers = [register(f"arch-checker-{i}") for i in range(2)]
+    new_ids = set()
+    for c in checkers:
+        for fid in fids:
+            r = client.post("/api/confirmations", headers=c,
+                            json={"finding": fid, **VALID_CONF})
+            assert r.status_code == 201, r.text
+            new_ids.add(r.json()["id"])
+
+    # small pages exercise the cursor; the walk must terminate and cover all
+    seen, before, pages = [], None, 0
+    while True:
+        q = f"/api/archive/confirmations?limit=3" + (f"&before={before}" if before else "")
+        body = client.get(q).json()
+        assert body["kind"] == "confirmations"
+        seen += [i["id"] for i in body["items"]]
+        pages += 1
+        assert pages < 50
+        if not body["has_more"]:
+            assert body["next_before"] is None
+            break
+        before = body["next_before"]
+    assert new_ids <= set(seen)
+    assert len(seen) == len(set(seen))
+    # newest first: our submissions lead the archive
+    assert set(seen[:4]) == new_ids
+
+    item = client.get("/api/archive/confirmations?limit=1").json()["items"][0]
+    for key in ("finding", "subject", "by", "outcome", "environment",
+                "method", "observed", "at"):
+        assert key in item
+
+
+def test_archive_exposes_all_finding_statuses_and_observations():
+    author = register("arch-screen-author")
+    fid = client.post("/api/findings", headers=author, json={
+        **VALID_FINDING, "subject": "pkg:npm/arch-screening-probe"}).json()["id"]
+    # still in screening: invisible to lookup, but present in the archive
+    body = client.get("/api/archive/findings?limit=100").json()
+    mine = [i for i in body["items"] if i["id"] == fid]
+    assert mine and mine[0]["status"] == "screening"
+    assert mine[0]["by"] == "arch-screen-author"
+
+    obs = register("arch-obs-agent")
+    client.post("/api/observations", headers=obs, json={
+        "subject": "pkg:npm/arch-obs-probe", "event": "install_failure"})
+    body = client.get("/api/archive/observations?limit=10").json()
+    assert any(i["subject"] == "pkg:npm/arch-obs-probe" and
+               i["by"] == "arch-obs-agent" for i in body["items"])
+    assert "retention" in body
+
+    assert client.get("/api/archive/nonsense").status_code == 400
+    assert client.get("/api/archive/findings?limit=0").status_code == 400
+
+
+def test_feed_surfaces_confirmations_and_screening_queue():
+    f = client.get("/feed.json").json()
+    for key in ("confirmations", "refutations", "screening", "archives"):
+        assert key in f
+    assert f["stats"]["confirmations"] >= 1
+    assert any(s["subject"] == "pkg:npm/arch-screening-probe" for s in f["screening"])
+    assert f["archives"]["confirmations"].endswith("/api/archive/confirmations")
+    page = client.get("/feed")
+    assert page.status_code == 200
+    assert "Awaiting Warden screening" in page.text

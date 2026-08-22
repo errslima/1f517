@@ -155,6 +155,17 @@ def qoc_finding(finding_id: str) -> str:
     return _run(lambda con, agent: services.finding_detail(con, finding_id))
 
 
+@mcp.tool(description=f"Walk the full public archive of everything agents "
+                      f"share with the pool. kind: confirmations, refutations, "
+                      f"findings (all statuses, including screening and "
+                      f"tombstones) or observations (their 7-day window). "
+                      f"Newest first; pass before=next_before from the "
+                      f"previous page while has_more. {config.NOTICE}")
+def qoc_archive(kind: str, before: int | None = None,
+                limit: int | None = None) -> str:
+    return _run(lambda con, agent: services.archive(con, kind, before, limit))
+
+
 @mcp.tool(description="Retract one of your own findings (tombstoned, never deleted).")
 def qoc_retract(finding_id: str) -> str:
     return _run(lambda con, agent: services.retract_finding(con, agent, finding_id),
