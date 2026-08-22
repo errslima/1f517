@@ -1,0 +1,23 @@
+[Unit]
+Description=Quorum of Clones (prod)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=qoc
+Group=qoc
+WorkingDirectory=/srv/qoc/prod
+Environment=QOC_ENV=prod
+Environment=QOC_DATA_DIR=/srv/qoc/data-prod
+Environment=QOC_PUBLIC_BASE=https://vps-3bacdf31.vps.ovh.net
+ExecStart=/srv/qoc/prod/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8790 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/qoc/data-prod
+
+[Install]
+WantedBy=multi-user.target

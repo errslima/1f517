@@ -1,0 +1,9 @@
+vps-3bacdf31.vps.ovh.net {
+	encode zstd gzip
+	handle_path /dev/* {
+		reverse_proxy 127.0.0.1:8791
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8790
+	}
+}

@@ -1,0 +1,229 @@
+import base64, hashlib, json, os, secrets, tempfile
+
+os.environ["QOC_DATA_DIR"] = tempfile.mkdtemp(prefix="qoc_test_")
+os.environ["QOC_ENV"] = "prod"
+
+import pytest                                       # noqa: E402
+from fastapi.testclient import TestClient          # noqa: E402
+from app import db, config, ratelimit               # noqa: E402
+from app.main import app                            # noqa: E402
+
+client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_ratelimits():
+    ratelimit._hits.clear()
+
+VALID_FINDING = {
+    "subject": "pkg:npm/left-pad",
+    "claim": "Calling pad() with a negative width throws TypeError instead of returning the input string as documented.",
+    "applicability": [{"field": "version", "op": "range", "value": ">=2.0.0 <3.0.0"},
+                      {"field": "runtime", "op": "eq", "value": "node"}],
+    "verify": {"method": "code_eval",
+               "expectation": "pad('x', -1) raises TypeError; the README states it returns 'x'."},
+    "falsified_by": "pad('x', -1) returning 'x' without error in an in-scope version.",
+    "ttl_days": 60,
+    "refs": ["https://github.com/left-pad/left-pad#usage"],
+}
+
+
+def register(handle):
+    r = client.post("/api/register", json={"handle": handle})
+    assert r.status_code == 201, r.text
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def warden_headers():
+    token = "qc_" + secrets.token_urlsafe(32)
+    con = db.connect()
+    con.execute(
+        "INSERT OR IGNORE INTO agents(handle, token_hash, is_warden, created_at) "
+        "VALUES('warden', ?, 1, ?)",
+        (hashlib.sha256(token.encode()).hexdigest(), db.now_ms()))
+    con.commit()
+    row = con.execute("SELECT token_hash FROM agents WHERE handle='warden'").fetchone()
+    # if warden pre-existed, reset its token to the one we just made
+    con.execute("UPDATE agents SET token_hash=? WHERE handle='warden'",
+                (hashlib.sha256(token.encode()).hexdigest(),))
+    con.commit()
+    con.close()
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_register_and_handle_rules():
+    h = register("otto-of-acme")
+    assert client.post("/api/register", json={"handle": "otto-of-acme"}).status_code == 409
+    assert client.post("/api/register", json={"handle": "X!"}).status_code == 422
+    r = client.get("/api/record/otto-of-acme")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["alg"] == "ed25519" and body["sig"] and body["pubkey"]
+    # signature verifies offline
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    pub = Ed25519PublicKey.from_public_bytes(
+        base64.urlsafe_b64decode(body["pubkey"] + "=="))
+    canonical = json.dumps(body["record"], sort_keys=True,
+                           separators=(",", ":")).encode()
+    pub.verify(base64.urlsafe_b64decode(body["sig"] + "=="), canonical)
+
+
+def test_observation_to_signal_needs_three_distinct_agents():
+    subj = "api:api.example.com/v2/users"
+    for i in range(3):
+        h = register(f"obs-agent-{i}")
+        r = client.post("/api/observations", headers=h, json={
+            "subject": subj, "event": "http_500",
+            "detail": "POST intermittently returns 500 since morning UTC",
+            "context": {"region": "eu"}})
+        assert r.status_code == 202, r.text
+    con = db.connect()
+    from app import services
+    services.recompute_signals(con)
+    con.close()
+    r = client.get("/api/signals", params={"subject": subj})
+    assert r.status_code == 200
+    sigs = r.json()["signals"]
+    assert any(s["distinct_agents"] == 3 and s["event"] == "http_500" for s in sigs)
+    # notice is the first key of every content response (invariant #1)
+    assert next(iter(r.json())) == "notice"
+
+
+def test_signal_withheld_below_three_distinct():
+    subj = "api:api.lonely.com/v1/x"
+    h = register("lonely-agent")
+    for _ in range(5):
+        client.post("/api/observations", headers=h,
+                    json={"subject": subj, "event": "rate_limited"})
+    con = db.connect()
+    from app import services
+    services.recompute_signals(con)
+    con.close()
+    r = client.get("/api/signals", params={"subject": subj})
+    assert r.json()["signals"] == []          # one agent five times is one data point
+
+
+def test_finding_validators():
+    h = register("validator-probe")
+    cases = [
+        ({**VALID_FINDING, "claim": "Run pip install left-pad to see the bug."},
+         "imperative_content"),
+        ({**VALID_FINDING, "applicability": []}, "missing_applicability"),
+        ({**VALID_FINDING, "ttl_days": 120}, "ttl_exceeds_cap"),
+        ({**VALID_FINDING, "falsified_by": None}, "unfalsifiable"),
+        ({**VALID_FINDING, "claim": "It might sometimes worth trying again."},
+         "unfalsifiable"),
+        ({**VALID_FINDING,
+          "claim": "The token qc_abcdefghijklmnop1234 is printed to stdout on error."},
+         "possible_secret"),
+        ({**VALID_FINDING, "subject": "api:192.168.1.10/admin"}, "subject_not_public"),
+        ({**VALID_FINDING,
+          "claim": "See https://example.com for the details of the throw behavior."},
+         "imperative_content"),
+    ]
+    for body, expected in cases:
+        r = client.post("/api/findings", headers=h, json=body)
+        assert r.status_code == 422, f"{expected}: {r.text}"
+        assert any(c.startswith(expected) for c in r.json()["codes"]), \
+            f"expected {expected} in {r.json()['codes']}"
+
+
+def test_finding_lifecycle_screening_approval_lookup():
+    h = register("finder-one")
+    r = client.post("/api/findings", headers=h, json=VALID_FINDING)
+    assert r.status_code == 202 and r.json()["status"] == "screening"
+    fid = r.json()["id"]
+
+    # duplicate while screening -> 409 with canonical pointer
+    r2 = client.post("/api/findings", headers=h, json=VALID_FINDING)
+    assert r2.status_code == 409 and r2.json()["canonical"] == fid
+
+    # not served while screening
+    r = client.get("/api/lookup", params={"subject": "pkg:npm/left-pad"})
+    assert all(f["id"] != fid
+               for res in r.json()["results"] for f in res["findings"])
+
+    # non-warden cannot moderate
+    assert client.get("/mod/queue", headers=h).status_code == 403
+
+    wh = warden_headers()
+    q = client.get("/mod/queue", headers=wh).json()["queue"]
+    assert any(x["id"] == fid for x in q)
+    r = client.post("/mod/decision", headers=wh, json={
+        "submission": fid, "decision": "approve", "note": "clean"})
+    assert r.status_code == 200
+
+    # now served, with expiry set
+    r = client.get("/api/lookup", params={"subject": "pkg:npm/left-pad"})
+    served = [f for res in r.json()["results"] for f in res["findings"]]
+    mine = [f for f in served if f["id"] == fid]
+    assert mine and mine[0]["expires_at"] and mine[0]["corroboration"] == "none"
+
+    # decision landed in submitter's inbox and replays until acked
+    inbox = client.get("/api/inbox", headers=h).json()
+    kinds = [e["kind"] for e in inbox["events"]]
+    assert "warden_decision" in kinds
+    again = client.get("/api/inbox", headers=h).json()
+    assert [e["cursor"] for e in again["events"]] == \
+           [e["cursor"] for e in inbox["events"]]     # reads never consume
+    r = client.post("/api/inbox/ack", headers=h, json={"cursor": inbox["next"]})
+    assert r.status_code == 200
+    assert client.get("/api/inbox", headers=h).json()["events"] == []
+
+
+def test_lookup_conditions_exclude_and_unknown():
+    h = register("finder-two")
+    wh = warden_headers()
+    body = {**VALID_FINDING, "subject": "pkg:npm/cond-probe",
+            "claim": "The throw behavior described in the readme applies only inside the stated version range."}
+    fid = client.post("/api/findings", headers=h, json=body).json()["id"]
+    client.post("/mod/decision", headers=wh,
+                json={"submission": fid, "decision": "approve"})
+
+    def hits(conditions=None):
+        params = [("subject", "pkg:npm/cond-probe")]
+        if conditions:
+            params.append(("conditions", json.dumps(conditions)))
+        r = client.get("/api/lookup", params=params)
+        return [f for res in r.json()["results"] for f in res["findings"]]
+
+    assert any(f["id"] == fid for f in hits())                       # no conditions
+    inrange = hits({"version": "2.3.1"})
+    assert any(f["id"] == fid and f["applicability_matched"] == "yes"
+               for f in inrange)
+    assert all(f["id"] != fid for f in hits({"version": "3.1.0"}))   # contradiction -> excluded
+    unk = hits({"os": "linux"})                                      # not scoped by os
+    assert any(f["id"] == fid and f["applicability_matched"] == "unknown"
+               for f in unk)
+
+
+def test_pulse_etag_and_null_wake():
+    r = client.get("/api/pulse")
+    assert r.status_code == 200
+    etag = r.headers["etag"]
+    assert next(iter(r.json())) == "notice"
+    r2 = client.get("/api/pulse", headers={"If-None-Match": etag})
+    assert r2.status_code == 304 and r2.content == b""
+
+
+def test_retract_and_phase2_stubs():
+    h = register("retractor")
+    fid = client.post("/api/findings", headers=h, json={
+        **VALID_FINDING, "subject": "pkg:npm/retract-probe"}).json()["id"]
+    assert client.post(f"/api/findings/{fid}/retract", headers=h).status_code == 200
+    other = register("not-the-owner")
+    fid2 = client.post("/api/findings", headers=h, json={
+        **VALID_FINDING, "subject": "pkg:npm/retract-probe-two"}).json()["id"]
+    assert client.post(f"/api/findings/{fid2}/retract", headers=other).status_code == 403
+    assert client.post("/api/confirmations", json={}).status_code == 501
+    assert client.get("/api/next").status_code == 501
+
+
+def test_landing_content_negotiation():
+    r = client.get("/", headers={"Accept": "text/html"})
+    assert "text/html" in r.headers["content-type"] and "Quorum" in r.text
+    r = client.get("/", headers={"Accept": "text/plain"})
+    assert "agent onboarding" in r.text and "qoc_lookup" in r.text
+    assert client.get("/start.md").status_code == 200
+    assert client.get("/llms.txt").status_code == 200
+    assert client.get("/feed.json").status_code == 200

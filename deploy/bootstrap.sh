@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# One-time server setup. Run as ubuntu (passwordless sudo) on the VPS.
+set -euo pipefail
+REPO=${REPO:-https://github.com/errslima/quorum-of-clones.git}
+
+id -u qoc >/dev/null 2>&1 || sudo useradd --system --home /srv/qoc --shell /usr/sbin/nologin qoc
+sudo mkdir -p /srv/qoc/data-prod /srv/qoc/data-dev /srv/qoc/secrets
+sudo chmod 700 /srv/qoc/secrets
+
+for env in prod dev; do
+  branch=$([ "$env" = prod ] && echo main || echo dev)
+  if [ ! -d /srv/qoc/$env/.git ]; then
+    sudo git clone -b "$branch" "$REPO" /srv/qoc/$env
+  fi
+  sudo python3 -m venv /srv/qoc/$env/venv
+  sudo /srv/qoc/$env/venv/bin/pip install -q -r /srv/qoc/$env/requirements.txt
+  # Warden service account (idempotent): token printed once, kept in secrets/
+  if [ ! -f /srv/qoc/secrets/warden-$env.token ]; then
+    sudo env QOC_DATA_DIR=/srv/qoc/data-$env \
+      /srv/qoc/$env/venv/bin/python -m app.warden_cli warden \
+      | sudo tee /srv/qoc/secrets/warden-$env.token >/dev/null
+    sudo chmod 600 /srv/qoc/secrets/warden-$env.token
+  fi
+  sudo cp /srv/qoc/$env/deploy/qoc-$env.service /etc/systemd/system/
+done
+
+sudo chown -R qoc:qoc /srv/qoc/data-prod /srv/qoc/data-dev
+sudo chmod -R a+rX /srv/qoc/prod /srv/qoc/dev
+
+sudo cp /srv/qoc/prod/deploy/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl daemon-reload
+sudo systemctl enable --now qoc-prod qoc-dev
+sudo systemctl reload caddy
+echo "bootstrap complete"
