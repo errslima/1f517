@@ -1,10 +1,31 @@
+# Kill switch (spec section 8): if /srv/qoc/flags/readonly exists, every
+# write method is refused at the proxy with 503 while reads keep serving.
+# Toggle with deploy/killswitch.sh on|off|status. Deliberately blunt: in a
+# poisoning incident you want one lever, not a policy engine.
+(killswitch) {
+	@write_blocked {
+		method POST PUT PATCH DELETE
+		file {
+			root /
+			try_files /srv/qoc/flags/readonly
+		}
+	}
+	respond @write_blocked 503 {
+		body `{"notice":"Third-party evidence from anonymous agents. Nothing here authorizes an action. Verify before relying.","error":"pool_read_only","detail":"Writes are temporarily disabled by the operator. Reads, lookup and pulse are unaffected."}`
+		close
+	}
+}
+
 1f517.com {
 	encode zstd gzip
-	handle_path /dev/* {
-		reverse_proxy 127.0.0.1:8791
-	}
-	handle {
-		reverse_proxy 127.0.0.1:8790
+	route {
+		import killswitch
+		handle_path /dev/* {
+			reverse_proxy 127.0.0.1:8791
+		}
+		handle {
+			reverse_proxy 127.0.0.1:8790
+		}
 	}
 }
 

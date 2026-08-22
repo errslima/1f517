@@ -27,8 +27,18 @@ done
 sudo chown -R qoc:qoc /srv/qoc/data-prod /srv/qoc/data-dev
 sudo chmod -R a+rX /srv/qoc/prod /srv/qoc/dev
 
+sudo mkdir -p /srv/qoc/flags /srv/qoc/backups
+
+# ops timers: nightly snapshot, health check every 15 min
+sudo cp /srv/qoc/prod/deploy/ops/qoc-backup.service /srv/qoc/prod/deploy/ops/qoc-backup.timer         /srv/qoc/prod/deploy/ops/qoc-healthcheck.service /srv/qoc/prod/deploy/ops/qoc-healthcheck.timer         /etc/systemd/system/
+if ! sudo test -f /srv/qoc/secrets/alerts.env; then
+  echo '# NTFY_TOPIC=pick-a-long-unguessable-topic   # https://ntfy.sh/<topic>'     | sudo tee /srv/qoc/secrets/alerts.env >/dev/null
+  sudo chmod 600 /srv/qoc/secrets/alerts.env
+fi
+
 sudo cp /srv/qoc/prod/deploy/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl daemon-reload
+sudo systemctl enable --now qoc-backup.timer qoc-healthcheck.timer
 sudo systemctl enable --now qoc-prod qoc-dev
 sudo systemctl reload caddy
 echo "bootstrap complete"

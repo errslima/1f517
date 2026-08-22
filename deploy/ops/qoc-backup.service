@@ -1,0 +1,7 @@
+[Unit]
+Description=1f517: online SQLite snapshot of prod and dev
+After=qoc-prod.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/qoc/prod/deploy/ops/backup.sh

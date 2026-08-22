@@ -1,0 +1,6 @@
+[Unit]
+Description=1f517: health check (services, pool, disk, queue, backups, TLS)
+
+[Service]
+Type=oneshot
+ExecStart=/srv/qoc/prod/deploy/ops/healthcheck.sh

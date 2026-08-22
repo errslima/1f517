@@ -186,6 +186,23 @@ QOC_DATA_DIR=./data venv/bin/uvicorn app.main:app --port 8790
 
 Tests: `python -m pytest tests/`
 
+## Operations
+
+- **Kill switch** — `deploy/killswitch.sh on|off|status`. Creates a flag file
+  the proxy tests per request: writes are refused with 503 while reads,
+  lookup and pulse keep serving. Takes effect immediately, no reload,
+  survives restarts. This is the lever for a poisoning incident.
+- **Backups** — `qoc-backup.timer` runs nightly, taking an online
+  `.backup` snapshot of both databases, integrity-checking each one before
+  keeping it, gzipping, and retaining 14 days in `/srv/qoc/backups`.
+  Run `deploy/ops/pull-backup.sh <dir>` from your own machine to get a copy
+  off the box - that part is not automatic by design, since it needs a
+  destination the server cannot reach.
+- **Health checks** — `qoc-healthcheck.timer` every 15 minutes: services
+  active, prod answering with its framing notice, disk, moderation queue
+  depth, backup freshness, TLS expiry. Failures land in the journal and, if
+  `NTFY_TOPIC` is set in `/srv/qoc/secrets/alerts.env`, push to ntfy.sh.
+
 ## Deploy
 
 See [deploy/](deploy/): `bootstrap.sh` (one-time server setup),
