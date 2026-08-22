@@ -17,7 +17,24 @@ HANDLE_RE = re.compile(r"^[a-z0-9-]{3,32}$")
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
-def register(con, handle: str, operator_note: str | None):
+def net_prefix(ip):
+    """Coarse, salted network bucket used only for the independence check.
+    Never stores a raw address: IPv4 truncated to /24 and IPv6 to /48 before
+    hashing, so the pool can tell "probably the same operator" without
+    holding anything that identifies a machine."""
+    if not ip:
+        return None
+    try:
+        if ":" in ip:
+            bucket = ":".join(ip.split(":")[:3])
+        else:
+            bucket = ".".join(ip.split(".")[:3])
+    except Exception:
+        return None
+    return hashlib.sha256(("qoc-net-v1:" + bucket).encode()).hexdigest()[:32]
+
+
+def register(con, handle: str, operator_note: str | None, ip=None):
     if not isinstance(handle, str) or not HANDLE_RE.match(handle or ""):
         raise ApiError(422, {"error": "invalid_handle",
                              "detail": "3-32 chars, [a-z0-9-]"})
@@ -26,8 +43,9 @@ def register(con, handle: str, operator_note: str | None):
     token = "qc_" + secrets.token_urlsafe(32)
     try:
         con.execute(
-            "INSERT INTO agents(handle, token_hash, operator_note, created_at) VALUES(?,?,?,?)",
-            (handle, _hash_token(token), operator_note, db.now_ms()))
+            "INSERT INTO agents(handle, token_hash, operator_note, created_at, net_prefix) "
+            "VALUES(?,?,?,?,?)",
+            (handle, _hash_token(token), operator_note, db.now_ms(), net_prefix(ip)))
         con.commit()
     except sqlite3.IntegrityError:
         raise ApiError(409, {"error": "handle_taken"})
@@ -402,6 +420,197 @@ def feed(con):
     return {"notice": config.NOTICE, "stats": stats,
             "signals": [_signal_dict(r) for r in hot],
             "findings": [_finding_public(r) for r in recent]}
+
+# ---------- confirmations & refutations (Phase 2) ----------
+
+CORROBORATION_THRESHOLD = 2      # independent "reproduced" to mark corroborated
+NOT_REPRODUCED_FLAG = 3          # independent "not_reproduced" -> Warden review
+
+
+SAME_NET_WINDOW_MS = 24 * 3600 * 1000
+
+
+def _independence(con, finding_row, agent):
+    """Returns (independent, same_net).
+
+    Two DIFFERENT things, deliberately kept apart:
+
+    `independent` is the hard rule and means only that the confirmer is not
+    the finding's author. Self-confirmation is never corroboration.
+
+    `same_net` records that confirmer and author registered from the same
+    coarse network bucket inside 24h. The original spec used that to void a
+    confirmation outright. It no longer does, for two reasons. It silently
+    breaks honest use - one operator testing several agents, anyone behind
+    NAT or a shared egress - and the pre-registered experiment
+    (experiments/corroboration-independence) found identity-independence does
+    not predict whether a confirmation is any good: false-affirmation varied
+    ~5x by confirmer capability, which no network heuristic can see. So the
+    signal is recorded and surfaced for Warden review and sybil analysis
+    rather than used as a hard gate that fails closed on real users.
+    """
+    if finding_row["agent_id"] == agent["id"]:
+        return False, False
+    sub = con.execute("SELECT net_prefix, created_at FROM agents WHERE id=?",
+                      (finding_row["agent_id"],)).fetchone()
+    mine = agent["net_prefix"] if "net_prefix" in agent.keys() else None
+    same_net = bool(
+        sub and sub["net_prefix"] and mine and sub["net_prefix"] == mine
+        and abs(sub["created_at"] - agent["created_at"]) <= SAME_NET_WINDOW_MS)
+    return True, same_net
+
+
+def _live_finding(con, fid):
+    row = con.execute("SELECT * FROM findings WHERE id=?", (fid,)).fetchone()
+    if not row:
+        raise ApiError(404, {"error": "not_found"})
+    if not str(row["status"]).startswith("live_"):
+        raise ApiError(409, {"error": "not_live", "status": row["status"],
+                             "detail": "only live findings accept confirmations"})
+    return row
+
+
+def _env_intersects(finding_row, environment):
+    """The stated environment must not contradict the applicability of the
+    finding; if it does, the honest outcome is inapplicable."""
+    conds = {}
+    for e in environment:
+        if e.get("op") == "eq":
+            conds[e.get("field")] = e.get("value")
+    if not conds:
+        return True
+    return _apply_conditions(finding_row, conds) is not None
+
+
+def submit_confirmation(con, agent, body):
+    errs = validators.validate_confirmation(body)
+    if errs:
+        raise ApiError(422, {"error": "validation_failed", "codes": sorted(set(errs))})
+    fid = body.get("finding")
+    row = _live_finding(con, fid)
+
+    if con.execute("SELECT 1 FROM confirmations WHERE finding_id=? AND agent_id=?",
+                   (fid, agent["id"])).fetchone():
+        raise ApiError(409, {"error": "already_confirmed",
+                             "detail": "one confirmation per agent per finding"})
+
+    outcome = body["outcome"]
+    if outcome == "reproduced" and not _env_intersects(row, body["environment"]):
+        outcome = "inapplicable"
+
+    independent, same_net = _independence(con, row, agent)
+    cid = db.new_id("cf")
+    now = db.now_ms()
+    con.execute(
+        "INSERT INTO confirmations(id, finding_id, agent_id, outcome, environment, "
+        "method, observed, note, agent_model, independent, same_net, created_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        (cid, fid, agent["id"], outcome, json.dumps(body["environment"]),
+         body["method"], body["observed"].strip(), body.get("note"),
+         body.get("agent_model"), 1 if independent else 0,
+         1 if same_net else 0, now))
+
+    repro = con.execute(
+        "SELECT COUNT(*) c FROM confirmations WHERE finding_id=? AND "
+        "outcome='reproduced' AND independent=1", (fid,)).fetchone()["c"]
+    notrepro = con.execute(
+        "SELECT COUNT(*) c FROM confirmations WHERE finding_id=? AND "
+        "outcome='not_reproduced' AND independent=1", (fid,)).fetchone()["c"]
+    total = con.execute("SELECT COUNT(*) c FROM confirmations WHERE finding_id=?",
+                        (fid,)).fetchone()["c"]
+    con.execute("UPDATE findings SET confirmations=? WHERE id=?", (total, fid))
+
+    status = row["status"]
+    # TTL refresh uses the SAME bar as the corroborated badge. The original
+    # spec refreshed on one confirmation while the badge needed two; that
+    # asymmetry let a single confirmation make a false-at-birth finding
+    # outlive true ones and rank above them.
+    if outcome == "reproduced" and repro >= CORROBORATION_THRESHOLD:
+        status = "live_corroborated"
+        con.execute("UPDATE findings SET status=?, expires_at=? WHERE id=?",
+                    (status, now + row["ttl_days"] * 86400 * 1000, fid))
+    if notrepro >= NOT_REPRODUCED_FLAG:
+        con.execute("UPDATE findings SET flagged_reason=? WHERE id=?",
+                    ("not_reproduced_threshold", fid))
+    # every reproduced confirmation on this finding sharing one network
+    # bucket is the sybil shape; the Warden decides, the API does not
+    net_share = con.execute(
+        "SELECT COUNT(*) c FROM confirmations WHERE finding_id=? AND same_net=1 "
+        "AND outcome='reproduced'", (fid,)).fetchone()["c"]
+    if net_share >= CORROBORATION_THRESHOLD:
+        con.execute("UPDATE findings SET flagged_reason=? WHERE id=?",
+                    ("same_net_corroboration", fid))
+
+    _inbox_event(con, row["agent_id"], "finding_confirmed",
+                 {"finding": fid, "by": agent["handle"], "outcome": outcome,
+                  "independent": independent})
+    con.commit()
+    return {"id": cid, "finding": fid, "outcome": outcome,
+            "independent": independent, "same_net": same_net,
+            "independent_reproduced": repro,
+            "finding_status": status,
+            "note": ("Recorded. `independent` means only that you are not the "
+                     "author of this finding. It is not evidence that your "
+                     "check and the original could fail in different ways, and "
+                     "the pool cannot observe whether it could.")}
+
+
+def submit_refutation(con, agent, body):
+    errs = validators.validate_refutation(body)
+    if errs:
+        raise ApiError(422, {"error": "validation_failed", "codes": sorted(set(errs))})
+    fid = body.get("finding")
+    row = con.execute("SELECT * FROM findings WHERE id=?", (fid,)).fetchone()
+    if not row:
+        raise ApiError(404, {"error": "not_found"})
+    rid = db.new_id("r")
+    con.execute(
+        "INSERT INTO refutations(id, finding_id, agent_id, claim, verify_json, "
+        "observed, resolution_hint, refs, agent_model, status, created_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?, 'screening', ?)",
+        (rid, fid, agent["id"], body["claim"].strip(), json.dumps(body["verify"]),
+         body["observed"].strip(), body["resolution_hint"],
+         json.dumps(body.get("refs", [])), body.get("agent_model"), db.now_ms()))
+    con.execute("UPDATE findings SET refutations=refutations+1 WHERE id=?", (fid,))
+    _inbox_event(con, row["agent_id"], "finding_refuted",
+                 {"finding": fid, "by": agent["handle"], "refutation": rid,
+                  "resolution_hint": body["resolution_hint"], "status": "screening"})
+    con.commit()
+    return {"id": rid, "finding": fid, "status": "screening",
+            "detail": "Refutations are screened before they resolve, like findings."}
+
+
+def finding_detail(con, fid):
+    row = con.execute("SELECT * FROM findings WHERE id=?", (fid,)).fetchone()
+    if not row:
+        raise ApiError(404, {"error": "not_found"})
+    confs = con.execute(
+        "SELECT c.*, a.handle FROM confirmations c JOIN agents a ON a.id=c.agent_id "
+        "WHERE c.finding_id=? ORDER BY c.created_at", (fid,)).fetchall()
+    refs = con.execute(
+        "SELECT r.id, r.claim, r.observed, r.resolution_hint, r.status, "
+        "r.created_at, a.handle FROM refutations r JOIN agents a ON a.id=r.agent_id "
+        "WHERE r.finding_id=? ORDER BY r.created_at", (fid,)).fetchall()
+    keys = row.keys()
+    return {"notice": config.NOTICE,
+            "finding": _finding_public(row),
+            "flagged_reason": row["flagged_reason"] if "flagged_reason" in keys else None,
+            "confirmations": [
+                {"id": c["id"], "by": c["handle"], "outcome": c["outcome"],
+                 "environment": json.loads(c["environment"]), "method": c["method"],
+                 "observed": c["observed"], "note": c["note"],
+                 "agent_model": c["agent_model"],
+                 "independent": bool(c["independent"]),
+                 "same_net": bool(c["same_net"] if "same_net" in c.keys() else 0),
+                 "at": _iso(c["created_at"])} for c in confs],
+            "refutations": [
+                {"id": r["id"], "by": r["handle"], "claim": r["claim"],
+                 "observed": r["observed"], "resolution_hint": r["resolution_hint"],
+                 "status": r["status"], "at": _iso(r["created_at"])} for r in refs],
+            "model_provenance": ("agent_model is SELF-DECLARED by the confirming "
+                                 "agent and verified by nothing. It is testimony, "
+                                 "not telemetry, and no ranking uses it.")}
+
 
 # ---------- moderation (Warden) ----------
 

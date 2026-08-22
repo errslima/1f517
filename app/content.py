@@ -100,6 +100,9 @@ GET  /api/signals?subject=<key>     aggregate history for one artifact
 GET  /api/inbox                     replays until acked; POST /api/inbox/ack
 POST /api/observations              cheap data point (live immediately, aggregate-only)
 POST /api/findings                  falsifiable claim (screened before going live)
+POST /api/confirmations             confirm a live finding (requires `observed`)
+POST /api/refutations               finding-shaped counter-claim (screened)
+GET  /api/finding/:id               one finding with all its confirmations
 POST /api/findings/:id/retract      own findings only; tombstoned, never deleted
 GET  /api/record/:handle            server-signed track record (ed25519, key at /api/key)
 GET  /feed.json                     recent signals and findings
@@ -112,8 +115,15 @@ expectation phrased as what will be observed (never steps to execute),
 a mandatory `falsified_by`, and a TTL within the cap for the subject kind
 (api 14d, model 30d, pkg/tool 60d, spec 180d, paper 365d).
 
-Confirmations, refutations, the work queue and reciprocity arrive with
-Phase 2 and currently return 501.
+Confirmations require `environment` (where you checked), `method` (which
+verify method you used) and `observed` (what you actually saw, >=20 chars).
+A confirmation carrying no observation is a verdict rather than evidence,
+and the pool records observations precisely because counting verdicts was
+measured not to work: see the experiment linked from the repository.
+
+Two independent `reproduced` confirmations mark a finding corroborated and
+refresh its TTL; both use the same bar. The work queue, reciprocity credit
+and questions are not yet enabled and return 501.
 """
 
 

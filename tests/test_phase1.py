@@ -215,7 +215,7 @@ def test_retract_and_phase2_stubs():
     fid2 = client.post("/api/findings", headers=h, json={
         **VALID_FINDING, "subject": "pkg:npm/retract-probe-two"}).json()["id"]
     assert client.post(f"/api/findings/{fid2}/retract", headers=other).status_code == 403
-    assert client.post("/api/confirmations", json={}).status_code == 501
+    assert client.post("/api/confirmations", json={}).status_code == 401
     assert client.get("/api/next").status_code == 501
 
 
@@ -227,3 +227,170 @@ def test_landing_content_negotiation():
     assert client.get("/start.md").status_code == 200
     assert client.get("/llms.txt").status_code == 200
     assert client.get("/feed.json").status_code == 200
+
+
+# ---------------- Phase 2: confirmations & refutations ----------------
+
+def _live_finding(subject, submitter_headers):
+    """Submit and Warden-approve a finding, returning its id."""
+    body = {**VALID_FINDING, "subject": subject}
+    fid = client.post("/api/findings", headers=submitter_headers,
+                      json=body).json()["id"]
+    client.post("/mod/decision", headers=warden_headers(),
+                json={"submission": fid, "decision": "approve"})
+    return fid
+
+
+VALID_CONF = {
+    "outcome": "reproduced",
+    "environment": [{"field": "version", "op": "eq", "value": "2.3.1"},
+                    {"field": "runtime", "op": "eq", "value": "node"}],
+    "method": "code_eval",
+    "observed": "Ran pad('x', -1) on 2.3.1 under node and it raised TypeError.",
+}
+
+
+def test_confirmation_requires_an_observation():
+    author = register("conf-author")
+    fid = _live_finding("pkg:npm/conf-probe-a", author)
+    checker = register("conf-checker-a")
+
+    # verdict with no observation is rejected: this is the schema change the
+    # experiment argued for
+    bad = {k: v for k, v in VALID_CONF.items() if k != "observed"}
+    r = client.post("/api/confirmations", headers=checker,
+                    json={"finding": fid, **bad})
+    assert r.status_code == 422
+    assert "missing_observation" in r.json()["codes"]
+
+    # too-short observation is equally rejected
+    r = client.post("/api/confirmations", headers=checker,
+                    json={"finding": fid, **VALID_CONF, "observed": "yes"})
+    assert r.status_code == 422 and "missing_observation" in r.json()["codes"]
+
+    # imperatives are linted in observed, like every other prose field
+    r = client.post("/api/confirmations", headers=checker,
+                    json={"finding": fid, **VALID_CONF,
+                          "observed": "Run npm install left-pad and then check the output yourself."})
+    assert r.status_code == 422
+    assert any(c.startswith("imperative_content") for c in r.json()["codes"])
+
+
+def test_two_independent_confirmations_corroborate_and_refresh():
+    author = register("corrob-author")
+    fid = _live_finding("pkg:npm/corrob-probe", author)
+
+    before = client.get(f"/api/finding/{fid}").json()["finding"]
+    assert before["status"] == "live_unconfirmed"
+
+    c1 = register("corrob-one")
+    r = client.post("/api/confirmations", headers=c1, json={"finding": fid, **VALID_CONF})
+    assert r.status_code == 201, r.text
+    assert r.json()["independent"] is True
+    assert r.json()["independent_reproduced"] == 1
+    # one confirmation must NOT corroborate, and must not refresh the clock
+    assert r.json()["finding_status"] == "live_unconfirmed"
+
+    c2 = register("corrob-two")
+    r = client.post("/api/confirmations", headers=c2, json={"finding": fid, **VALID_CONF})
+    assert r.json()["independent_reproduced"] == 2
+    assert r.json()["finding_status"] == "live_corroborated"
+
+    detail = client.get(f"/api/finding/{fid}").json()
+    assert detail["finding"]["corroboration"] == "corroborated"
+    assert len(detail["confirmations"]) == 2
+    assert all(c["observed"] for c in detail["confirmations"])
+
+    # the author's inbox learned about both
+    kinds = [e["kind"] for e in client.get("/api/inbox", headers=author).json()["events"]]
+    assert kinds.count("finding_confirmed") == 2
+
+
+def test_self_confirmation_is_not_independent():
+    author = register("self-conf-author")
+    fid = _live_finding("pkg:npm/self-conf-probe", author)
+    r = client.post("/api/confirmations", headers=author,
+                    json={"finding": fid, **VALID_CONF})
+    assert r.status_code == 201
+    assert r.json()["independent"] is False
+    assert r.json()["independent_reproduced"] == 0
+    assert r.json()["finding_status"] == "live_unconfirmed"
+
+
+def test_one_confirmation_per_agent_per_finding():
+    author = register("dupe-conf-author")
+    fid = _live_finding("pkg:npm/dupe-conf-probe", author)
+    checker = register("dupe-conf-checker")
+    assert client.post("/api/confirmations", headers=checker,
+                       json={"finding": fid, **VALID_CONF}).status_code == 201
+    r = client.post("/api/confirmations", headers=checker,
+                    json={"finding": fid, **VALID_CONF})
+    assert r.status_code == 409 and r.json()["error"] == "already_confirmed"
+
+
+def test_contradicting_environment_downgrades_to_inapplicable():
+    author = register("env-conf-author")
+    fid = _live_finding("pkg:npm/env-probe", author)
+    checker = register("env-conf-checker")
+    # the finding scopes to >=2.0.0 <3.0.0; claiming 4.0.0 cannot reproduce it
+    r = client.post("/api/confirmations", headers=checker, json={
+        "finding": fid, **VALID_CONF,
+        "environment": [{"field": "version", "op": "eq", "value": "4.0.0"}]})
+    assert r.status_code == 201
+    assert r.json()["outcome"] == "inapplicable"
+    assert r.json()["independent_reproduced"] == 0
+
+
+def test_confirmation_rejected_on_non_live_finding():
+    author = register("screening-conf-author")
+    fid = client.post("/api/findings", headers=author,
+                      json={**VALID_FINDING, "subject": "pkg:npm/screening-probe"}).json()["id"]
+    checker = register("screening-conf-checker")
+    r = client.post("/api/confirmations", headers=checker,
+                    json={"finding": fid, **VALID_CONF})
+    assert r.status_code == 409 and r.json()["error"] == "not_live"
+
+
+def test_refutation_is_screened_and_notifies_author():
+    author = register("refute-author")
+    fid = _live_finding("pkg:npm/refute-probe", author)
+    refuter = register("refuter-one")
+    r = client.post("/api/refutations", headers=refuter, json={
+        "finding": fid,
+        "claim": "The throwing behaviour was fixed in 2.4.0 and the documented return value holds again.",
+        "verify": {"method": "code_eval",
+                   "expectation": "pad('x', -1) returns 'x' without error on 2.4.0."},
+        "observed": "Checked 2.4.0 under node; the call returned 'x' with no exception raised.",
+        "resolution_hint": "narrow_applicability"})
+    assert r.status_code == 202, r.text
+    assert r.json()["status"] == "screening"
+
+    detail = client.get(f"/api/finding/{fid}").json()
+    assert len(detail["refutations"]) == 1
+    assert detail["refutations"][0]["resolution_hint"] == "narrow_applicability"
+    kinds = [e["kind"] for e in client.get("/api/inbox", headers=author).json()["events"]]
+    assert "finding_refuted" in kinds
+
+
+def test_refutation_requires_falsifiable_shape():
+    author = register("refute-shape-author")
+    fid = _live_finding("pkg:npm/refute-shape-probe", author)
+    refuter = register("refuter-two")
+    r = client.post("/api/refutations", headers=refuter, json={
+        "finding": fid, "claim": "It might sometimes not throw.",
+        "verify": {"method": "code_eval", "expectation": "unclear"},
+        "observed": "Tried it a few times and the behaviour seemed to vary between runs.",
+        "resolution_hint": "retract"})
+    assert r.status_code == 422
+    assert "unfalsifiable" in r.json()["codes"]
+
+
+def test_agent_model_is_recorded_but_labelled_untrusted():
+    author = register("model-conf-author")
+    fid = _live_finding("pkg:npm/model-probe", author)
+    checker = register("model-conf-checker")
+    client.post("/api/confirmations", headers=checker, json={
+        "finding": fid, **VALID_CONF, "agent_model": "some-vendor/some-model-1"})
+    d = client.get(f"/api/finding/{fid}").json()
+    assert d["confirmations"][0]["agent_model"] == "some-vendor/some-model-1"
+    assert "SELF-DECLARED" in d["model_provenance"]

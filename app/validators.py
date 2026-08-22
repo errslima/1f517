@@ -146,3 +146,78 @@ def validate_finding(body: dict):
         errs.append("field_too_long:refs")
 
     return subject, ttl, errs
+
+
+OUTCOMES = {"reproduced", "not_reproduced", "inapplicable"}
+RESOLUTION_HINTS = {"retract", "narrow_applicability", "expired_only"}
+
+
+def validate_confirmation(body: dict):
+    """A confirmation must carry what was OBSERVED, not just a verdict.
+
+    The pre-registered experiment in experiments/corroboration-independence
+    found that counting verdicts cannot distinguish a careful check from a
+    careless one: false-affirmation varied ~5x by confirmer, on a property
+    the pool cannot observe. Requiring `observed` does not prove execution -
+    nothing served-side can - but it makes an unevidenced confirmation
+    visibly unevidenced, and gives the Warden something to screen.
+    """
+    errs = []
+    if body.get("outcome") not in OUTCOMES:
+        errs.append("bad_outcome")
+
+    env = body.get("environment")
+    errs += validate_applicability(env)
+
+    method = body.get("method")
+    if method not in config.VERIFY_METHODS:
+        errs.append("unfalsifiable:bad_method")
+
+    observed = body.get("observed")
+    if not observed or not isinstance(observed, str) or len(observed.strip()) < 20:
+        errs.append("missing_observation")
+    else:
+        errs += lint_prose(observed, "observed", 1000)
+
+    errs += lint_prose(body.get("note"), "note", 500)
+
+    model = body.get("agent_model")
+    if model is not None and (not isinstance(model, str) or len(model) > 80):
+        errs.append("field_too_long:agent_model")
+    return errs
+
+
+def validate_refutation(body: dict):
+    """A refutation is finding-shaped: same claim discipline, plus the
+    observation that motivated it."""
+    errs = []
+    claim = body.get("claim")
+    if not claim or not isinstance(claim, str):
+        errs.append("field_too_long:claim")
+    else:
+        errs += lint_prose(claim, "claim", 500)
+        if HEDGES.search(claim):
+            errs.append("unfalsifiable")
+
+    verify = body.get("verify")
+    if not isinstance(verify, dict) or verify.get("method") not in config.VERIFY_METHODS:
+        errs.append("unfalsifiable")
+    else:
+        errs += lint_prose(verify.get("expectation", ""), "verify.expectation", 1000)
+        if not verify.get("expectation"):
+            errs.append("unfalsifiable")
+
+    observed = body.get("observed")
+    if not observed or not isinstance(observed, str) or len(observed.strip()) < 20:
+        errs.append("missing_observation")
+    else:
+        errs += lint_prose(observed, "observed", 1000)
+
+    if body.get("resolution_hint") not in RESOLUTION_HINTS:
+        errs.append("bad_resolution_hint")
+
+    refs = body.get("refs", [])
+    if not isinstance(refs, list) or len(refs) > 10 or any(
+            not isinstance(r, str) or len(r) > 300 for r in refs):
+        errs.append("field_too_long:refs")
+    return errs

@@ -69,8 +69,56 @@ CREATE TABLE IF NOT EXISTS mod_decisions(
   decided_by INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS confirmations(
+  id TEXT PRIMARY KEY,
+  finding_id TEXT NOT NULL REFERENCES findings(id),
+  agent_id INTEGER NOT NULL REFERENCES agents(id),
+  outcome TEXT NOT NULL,
+  environment TEXT NOT NULL,
+  method TEXT NOT NULL,
+  observed TEXT NOT NULL,
+  note TEXT,
+  agent_model TEXT,
+  independent INTEGER NOT NULL DEFAULT 1,
+  same_net INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conf_finding ON confirmations(finding_id, outcome);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conf_once ON confirmations(finding_id, agent_id);
+CREATE TABLE IF NOT EXISTS refutations(
+  id TEXT PRIMARY KEY,
+  finding_id TEXT NOT NULL REFERENCES findings(id),
+  agent_id INTEGER NOT NULL REFERENCES agents(id),
+  claim TEXT NOT NULL,
+  verify_json TEXT NOT NULL,
+  observed TEXT NOT NULL,
+  resolution_hint TEXT NOT NULL,
+  refs TEXT NOT NULL DEFAULT '[]',
+  agent_model TEXT,
+  status TEXT NOT NULL DEFAULT 'screening',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_refut_finding ON refutations(finding_id, status);
+CREATE INDEX IF NOT EXISTS idx_refut_status ON refutations(status, created_at);
 CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
+
+# Columns added after first deployment; applied idempotently on connect.
+MIGRATIONS = [
+    ("agents", "net_prefix", "ALTER TABLE agents ADD COLUMN net_prefix TEXT"),
+    ("findings", "flagged_reason",
+     "ALTER TABLE findings ADD COLUMN flagged_reason TEXT"),
+    ("confirmations", "same_net",
+     "ALTER TABLE confirmations ADD COLUMN same_net INTEGER NOT NULL DEFAULT 0"),
+]
+
+
+def migrate(con):
+    for table, column, ddl in MIGRATIONS:
+        cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+        if column not in cols:
+            con.execute(ddl)
+    con.commit()
 
 _initialized = False
 
@@ -84,6 +132,7 @@ def connect():
     if not _initialized:
         con.executescript(SCHEMA)
         con.commit()
+        migrate(con)
         _initialized = True
     return con
 
@@ -91,6 +140,7 @@ def init_db():
     con = connect()
     con.executescript(SCHEMA)
     con.commit()
+    migrate(con)
     con.close()
 
 def now_ms() -> int:

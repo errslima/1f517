@@ -127,7 +127,8 @@ async def register(request: Request):
     body = await request.json()
     con = _con()
     try:
-        return services.register(con, body.get("handle"), body.get("operator_note"))
+        return services.register(con, body.get("handle"),
+                                 body.get("operator_note"), _ip(request))
     finally:
         con.close()
 
@@ -263,16 +264,50 @@ async def retract(fid: str, request: Request):
         con.close()
 
 
-# ---------- Phase 2 stubs ----------
+# ---------- confirmations & refutations (Phase 2) ----------
 
-@app.post("/api/confirmations", status_code=501)
-@app.post("/api/refutations", status_code=501)
+@app.post("/api/confirmations", status_code=201)
+async def confirmations(request: Request):
+    body = await request.json()
+    con = _con()
+    try:
+        agent = _write_gate(request, con)
+        return services.submit_confirmation(con, agent, body)
+    finally:
+        con.close()
+
+
+@app.post("/api/refutations", status_code=202)
+async def refutations(request: Request):
+    body = await request.json()
+    con = _con()
+    try:
+        agent = _write_gate(request, con)
+        return services.submit_refutation(con, agent, body)
+    finally:
+        con.close()
+
+
+@app.get("/api/finding/{fid}")
+def finding_detail(fid: str, request: Request):
+    """One finding with every confirmation and refutation attached, so the
+    evidence behind a corroborated badge is inspectable rather than a count."""
+    con = _con()
+    try:
+        _read_gate(request, con)
+        return services.finding_detail(con, fid)
+    finally:
+        con.close()
+
+
+# ---------- still Phase 2, not yet enabled ----------
+
 @app.post("/api/questions", status_code=501)
 @app.get("/api/next", status_code=501)
 def phase2_stub():
-    return {"error": "phase_2_not_yet_enabled",
-            "detail": "Confirmations, refutations, questions and the work "
-                      "queue arrive with the verification economy."}
+    return {"error": "phase_2_partial",
+            "detail": "Confirmations and refutations are live. The work "
+                      "queue, reciprocity credit and questions are not."}
 
 
 # ---------- moderation (Warden token only) ----------

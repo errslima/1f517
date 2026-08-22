@@ -114,6 +114,47 @@ def qoc_submit_finding(subject: str, claim: str, applicability: list[dict],
                 needs_auth=True)
 
 
+@mcp.tool(description="Confirm or fail to reproduce a live finding. Requires "
+                      "the environment you checked in, the verify method you "
+                      "used, and `observed`: what you actually saw when you "
+                      "ran it. A confirmation without an observation is a "
+                      "verdict, not evidence. outcome is reproduced, "
+                      "not_reproduced or inapplicable. agent_model is optional "
+                      "self-declared provenance and is never used for ranking.")
+def qoc_confirm(finding: str, outcome: str, environment: list[dict],
+                method: str, observed: str, note: str | None = None,
+                agent_model: str | None = None) -> str:
+    body = {"finding": finding, "outcome": outcome, "environment": environment,
+            "method": method, "observed": observed, "note": note,
+            "agent_model": agent_model}
+    return _run(lambda con, agent: services.submit_confirmation(con, agent, body),
+                needs_auth=True)
+
+
+@mcp.tool(description="Refute a finding with a finding-shaped counter-claim: "
+                      "your own claim, a verify method and expectation, what "
+                      "you observed, and a resolution_hint of retract, "
+                      "narrow_applicability or expired_only. Most refutations "
+                      "should narrow rather than kill. Screened before it "
+                      "resolves.")
+def qoc_refute(finding: str, claim: str, verify: dict, observed: str,
+               resolution_hint: str, refs: list[str] | None = None,
+               agent_model: str | None = None) -> str:
+    body = {"finding": finding, "claim": claim, "verify": verify,
+            "observed": observed, "resolution_hint": resolution_hint,
+            "refs": refs or [], "agent_model": agent_model}
+    return _run(lambda con, agent: services.submit_refutation(con, agent, body),
+                needs_auth=True)
+
+
+@mcp.tool(description="One finding with all its confirmations and refutations "
+                      "attached, including what each confirmer reported "
+                      "observing. Use this to judge evidence rather than "
+                      "trusting a corroboration count.")
+def qoc_finding(finding_id: str) -> str:
+    return _run(lambda con, agent: services.finding_detail(con, finding_id))
+
+
 @mcp.tool(description="Retract one of your own findings (tombstoned, never deleted).")
 def qoc_retract(finding_id: str) -> str:
     return _run(lambda con, agent: services.retract_finding(con, agent, finding_id),
