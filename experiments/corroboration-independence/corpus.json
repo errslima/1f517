@@ -1,0 +1,482 @@
+[
+ {
+  "id": "c001",
+  "subject": "pkg:pypi/pandas",
+  "claim": "DataFrame.append and Series.append were removed in pandas 2.0; concat is the documented replacement.",
+  "expectation": "Calling DataFrame.append on a 2.x release raises AttributeError, and the 2.0.0 release notes list the removal with concat named instead.",
+  "truth": true,
+  "note": "verified: pandas 2.0.0 whatsnew, GH 35407"
+ },
+ {
+  "id": "c002",
+  "subject": "pkg:pypi/numpy",
+  "claim": "The alias np.float raises an error from numpy 1.24, where its earlier deprecation expired.",
+  "expectation": "Evaluating np.float on 1.24 or later raises rather than returning a type.",
+  "truth": true,
+  "note": "verified: numpy 1.24.0 release notes, gh-22607"
+ },
+ {
+  "id": "c003",
+  "subject": "pkg:npm/node-fetch",
+  "claim": "From version 3 the package is ESM-only and cannot be loaded with require(); version 2 remains CommonJS-compatible.",
+  "expectation": "require('node-fetch') on a v3 install fails, while the same call on v2 succeeds.",
+  "truth": true,
+  "note": "verified: node-fetch README"
+ },
+ {
+  "id": "c004",
+  "subject": "pkg:npm/chalk",
+  "claim": "Chalk 5 is published as pure ESM and cannot be loaded with require(); CommonJS consumers are directed to version 4.",
+  "expectation": "require('chalk') fails on a v5 install and succeeds on v4.",
+  "truth": true,
+  "note": "verified: chalk readme / v5.0.0 release notes"
+ },
+ {
+  "id": "c005",
+  "subject": "pkg:npm/express",
+  "claim": "Express 5 declares a minimum Node.js engine of 18 in its package manifest.",
+  "expectation": "The published package.json for express 5.x carries an engines.node value of >= 18.",
+  "truth": true,
+  "note": "verified: express package.json, v5.2.1"
+ },
+ {
+  "id": "c006",
+  "subject": "pkg:pypi/sqlalchemy",
+  "claim": "Passing a bare SQL string to Connection.execute raises in SQLAlchemy 2.0; textual SQL requires text() or exec_driver_sql.",
+  "expectation": "conn.execute('SELECT 1') raises on a 2.x release rather than returning rows.",
+  "truth": true,
+  "note": "verified: SQLAlchemy 2.0 migration guide"
+ },
+ {
+  "id": "c007",
+  "subject": "pkg:pypi/urllib3",
+  "claim": "urllib3 2.x supports only OpenSSL 1.1.1 or newer and raises ImportError against an ssl module built on older OpenSSL.",
+  "expectation": "Importing urllib3 2.x where ssl reports OpenSSL 1.0.2 raises ImportError naming the version requirement.",
+  "truth": true,
+  "note": "verified: urllib3 v2 migration guide"
+ },
+ {
+  "id": "c008",
+  "subject": "tool:ffmpeg",
+  "claim": "With no explicit map option, automatic stream selection picks the highest-resolution video stream and the audio stream with the most channels.",
+  "expectation": "Given several video streams of differing resolution and no map option, the highest-resolution one is selected.",
+  "truth": true,
+  "note": "verified: ffmpeg docs, stream selection"
+ },
+ {
+  "id": "c009",
+  "subject": "tool:curl",
+  "claim": "HTTP 3xx redirects are not followed unless the location option is supplied.",
+  "expectation": "A request to a URL returning 302 emits the redirect response rather than the final target's body, absent -L.",
+  "truth": true,
+  "note": "verified: curl manpage"
+ },
+ {
+  "id": "c010",
+  "subject": "tool:sqlite",
+  "claim": "The default journaling mode is DELETE; write-ahead logging must be enabled explicitly via pragma.",
+  "expectation": "PRAGMA journal_mode on a newly created database returns delete rather than wal.",
+  "truth": true,
+  "note": "verified: sqlite pragma docs"
+ },
+ {
+  "id": "c011",
+  "subject": "spec:ietf/rfc9110",
+  "claim": "RFC 9110 obsoletes RFC 7231.",
+  "expectation": "The RFC Editor entry for 9110 lists 7231 among the RFCs it obsoletes.",
+  "truth": true,
+  "note": "verified: rfc-editor.org/info/rfc9110"
+ },
+ {
+  "id": "c012",
+  "subject": "spec:ietf/rfc8259",
+  "claim": "RFC 8259 requires JSON exchanged between systems outside a closed ecosystem to be encoded in UTF-8.",
+  "expectation": "The specification text states that such JSON text MUST be encoded using UTF-8.",
+  "truth": true,
+  "note": "verified: rfc-editor.org/info/rfc8259"
+ },
+ {
+  "id": "c013",
+  "subject": "pkg:pypi/pydantic",
+  "claim": "BaseModel.dict is deprecated in pydantic v2 in favour of model_dump.",
+  "expectation": "Calling .dict() on a v2 model emits a deprecation warning and the migration guide maps it to model_dump.",
+  "truth": true,
+  "note": "verified: pydantic v2 migration guide"
+ },
+ {
+  "id": "c014",
+  "subject": "pkg:pypi/black",
+  "claim": "Black's default target line length is 88 characters.",
+  "expectation": "Formatting with no line-length flag wraps at 88 columns.",
+  "truth": true,
+  "note": "verified: Black current style docs"
+ },
+ {
+  "id": "c015",
+  "subject": "tool:jq",
+  "claim": "jq pretty-prints its JSON output by default; compact single-line output requires the compact-output flag.",
+  "expectation": "Piping an object through jq with no flags yields indented multi-line output.",
+  "truth": true,
+  "note": "verified: jq manual"
+ },
+ {
+  "id": "c016",
+  "subject": "tool:rsync",
+  "claim": "A trailing slash on the source path copies the directory's contents without recreating the directory itself at the destination.",
+  "expectation": "rsync src/ dst/ places src's children directly in dst, while rsync src dst creates dst/src.",
+  "truth": true,
+  "note": "verified: rsync manpage"
+ },
+ {
+  "id": "c017",
+  "subject": "pkg:npm/react",
+  "claim": "From React 17 the new JSX transform allows JSX without importing React into scope.",
+  "expectation": "A component file using JSX but no React import compiles under the new transform.",
+  "truth": true,
+  "note": "verified: React new JSX transform post"
+ },
+ {
+  "id": "c018",
+  "subject": "pkg:npm/typescript",
+  "claim": "When compilerOptions omits strict entirely, the compiler behaves as if strict were true.",
+  "expectation": "An untyped function parameter raises TS7006 under a tsconfig that never mentions strict.",
+  "truth": true,
+  "note": "verified empirically with tsc this session"
+ },
+ {
+  "id": "c019",
+  "subject": "pkg:npm/node",
+  "claim": "The global fetch stopped being marked experimental in Node.js 21.",
+  "expectation": "The Node.js globals documentation history records fetch as no longer experimental at v21.0.0.",
+  "truth": true,
+  "note": "verified: nodejs.org globals docs"
+ },
+ {
+  "id": "c020",
+  "subject": "pkg:pypi/pip",
+  "claim": "PEP 668 specifies that installing into an externally managed interpreter outside a virtual environment fails unless an override flag is passed.",
+  "expectation": "pip install outside a venv on an interpreter carrying the marker exits with an error naming the override.",
+  "truth": true,
+  "note": "verified: PEP 668"
+ },
+ {
+  "id": "c021",
+  "subject": "pkg:pypi/uv",
+  "claim": "uv's pip interface installs into a virtual environment by default and needs an explicit flag or python path to touch the system interpreter.",
+  "expectation": "uv pip install with no active venv and no --system does not modify the system interpreter.",
+  "truth": true,
+  "note": "verified: uv pip compatibility docs"
+ },
+ {
+  "id": "c022",
+  "subject": "tool:docker",
+  "claim": "A shell-form CMD runs the process under a shell rather than as PID 1, so it does not receive Unix signals.",
+  "expectation": "A container built with shell-form CMD does not deliver SIGTERM to the named executable on stop.",
+  "truth": true,
+  "note": "verified: Dockerfile reference"
+ },
+ {
+  "id": "c023",
+  "subject": "spec:ietf/rfc9111",
+  "claim": "RFC 9111 obsoletes RFC 7234.",
+  "expectation": "The RFC Editor entry for 9111 states that it obsoletes 7234.",
+  "truth": true,
+  "note": "verified: rfc-editor.org/info/rfc9111"
+ },
+ {
+  "id": "c024",
+  "subject": "spec:semver/2.0.0",
+  "claim": "Semantic Versioning 2.0.0 requires the MAJOR version to increment for any backward incompatible change to the public API.",
+  "expectation": "The specification text states MAJOR MUST be incremented when backward incompatible changes are introduced.",
+  "truth": true,
+  "note": "verified: semver.org"
+ },
+ {
+  "id": "c025",
+  "subject": "spec:ietf/rfc7519",
+  "claim": "RFC 7519 (JSON Web Token) is updated by RFC 8725.",
+  "expectation": "The RFC Editor entry for 7519 lists 8725 among the RFCs updating it.",
+  "truth": true,
+  "note": "verified: rfc-editor.org/info/rfc7519"
+ },
+ {
+  "id": "c026",
+  "subject": "spec:ietf/rfc6455",
+  "claim": "RFC 6455 (The WebSocket Protocol) is updated by RFC 8441.",
+  "expectation": "The RFC Editor entry for 6455 lists 8441 among the RFCs updating it.",
+  "truth": true,
+  "note": "verified: rfc-editor.org/info/rfc6455"
+ },
+ {
+  "id": "c027",
+  "subject": "pkg:pypi/fastapi",
+  "claim": "FastAPI serves interactive documentation at /docs and /redoc unless those URLs are set to None.",
+  "expectation": "A plain FastAPI() application responds 200 at /docs with no extra configuration.",
+  "truth": true,
+  "note": "verified: FastAPI metadata docs"
+ },
+ {
+  "id": "c028",
+  "subject": "tool:git",
+  "claim": "With init.defaultBranch unset in every configuration layer, git's documented fallback initial branch name is master.",
+  "expectation": "The git-init manual describes the fallback name as currently master, noting it changes at Git 3.0.",
+  "truth": true,
+  "note": "verified: git-scm.com/docs/git-init"
+ },
+ {
+  "id": "c029",
+  "subject": "pkg:pypi/requests",
+  "claim": "requests applies no default timeout; a call omitting the timeout argument can block indefinitely.",
+  "expectation": "The documentation states no timeout is applied by default and advises passing one explicitly.",
+  "truth": true,
+  "note": "verified: requests advanced docs"
+ },
+ {
+  "id": "c030",
+  "subject": "api:api.github.com",
+  "claim": "The GitHub REST API primary rate limit for unauthenticated requests is 60 per hour.",
+  "expectation": "The rate limit documentation states 60 requests per hour for unauthenticated traffic.",
+  "truth": true,
+  "note": "verified: GitHub REST rate-limit docs"
+ },
+ {
+  "id": "c031",
+  "subject": "pkg:pypi/pandas",
+  "claim": "DataFrame.merge was removed in pandas 2.0; join is the documented replacement.",
+  "expectation": "Calling DataFrame.merge on a 2.x release raises AttributeError.",
+  "truth": false,
+  "note": "FALSE: append was removed, merge still exists"
+ },
+ {
+  "id": "c032",
+  "subject": "pkg:pypi/numpy",
+  "claim": "The function np.array was removed in numpy 1.24 in favour of np.asarray.",
+  "expectation": "Evaluating np.array on 1.24 or later raises AttributeError.",
+  "truth": false,
+  "note": "FALSE: np.array is core and present"
+ },
+ {
+  "id": "c033",
+  "subject": "pkg:npm/node-fetch",
+  "claim": "node-fetch v2 is ESM-only and cannot be loaded with require(), while v3 restored CommonJS support.",
+  "expectation": "require('node-fetch') fails on a v2 install and succeeds on v3.",
+  "truth": false,
+  "note": "FALSE: inverted; v3 is the ESM-only one"
+ },
+ {
+  "id": "c034",
+  "subject": "pkg:npm/chalk",
+  "claim": "Chalk 4 is pure ESM and cannot be loaded with require(); CommonJS consumers must use Chalk 5.",
+  "expectation": "require('chalk') fails on a v4 install and succeeds on v5.",
+  "truth": false,
+  "note": "FALSE: inverted; v5 is ESM"
+ },
+ {
+  "id": "c035",
+  "subject": "pkg:npm/express",
+  "claim": "Express 5 declares a minimum Node.js engine of 20 in its package manifest.",
+  "expectation": "The published package.json for express 5.x carries an engines.node value of >= 20.",
+  "truth": false,
+  "note": "FALSE: it is >= 18"
+ },
+ {
+  "id": "c036",
+  "subject": "pkg:pypi/sqlalchemy",
+  "claim": "SQLAlchemy 2.0 requires every Connection.execute call to be wrapped in an explicit session.begin() block or it raises InvalidRequestError.",
+  "expectation": "conn.execute(text('SELECT 1')) outside session.begin() raises InvalidRequestError on 2.x.",
+  "truth": false,
+  "note": "FALSE: fabricated requirement"
+ },
+ {
+  "id": "c037",
+  "subject": "pkg:pypi/urllib3",
+  "claim": "urllib3 2.x requires OpenSSL 3.0 or newer and raises ImportError against OpenSSL 1.1.1.",
+  "expectation": "Importing urllib3 2.x where ssl reports OpenSSL 1.1.1 raises ImportError.",
+  "truth": false,
+  "note": "FALSE: 1.1.1 is the supported floor"
+ },
+ {
+  "id": "c038",
+  "subject": "tool:ffmpeg",
+  "claim": "With no explicit map option, automatic stream selection picks the lowest-resolution video stream to minimise output size.",
+  "expectation": "Given several video streams of differing resolution and no map option, the lowest-resolution one is selected.",
+  "truth": false,
+  "note": "FALSE: inverted; highest resolution wins"
+ },
+ {
+  "id": "c039",
+  "subject": "tool:curl",
+  "claim": "HTTP 3xx redirects are followed by default; the location option exists to disable that behaviour.",
+  "expectation": "A request to a URL returning 302 fetches the final target without any flag.",
+  "truth": false,
+  "note": "FALSE: inverted; -L enables following"
+ },
+ {
+  "id": "c040",
+  "subject": "tool:sqlite",
+  "claim": "The default journaling mode is WAL; rollback journalling must be selected explicitly via pragma.",
+  "expectation": "PRAGMA journal_mode on a newly created database returns wal.",
+  "truth": false,
+  "note": "FALSE: inverted; DELETE is default"
+ },
+ {
+  "id": "c041",
+  "subject": "spec:ietf/rfc9110",
+  "claim": "RFC 9110 obsoletes RFC 2616.",
+  "expectation": "The RFC Editor entry for 9110 lists 2616 among the RFCs it obsoletes.",
+  "truth": false,
+  "note": "FALSE: 2616 was obsoleted by the 723x series"
+ },
+ {
+  "id": "c042",
+  "subject": "spec:ietf/rfc8259",
+  "claim": "RFC 8259 permits JSON exchanged between independent systems to be encoded in UTF-8, UTF-16 or UTF-32 at the sender's discretion.",
+  "expectation": "The specification text lists all three encodings as acceptable for open interchange.",
+  "truth": false,
+  "note": "FALSE: UTF-8 is required for open interchange"
+ },
+ {
+  "id": "c043",
+  "subject": "pkg:pypi/pydantic",
+  "claim": "BaseModel.dict was renamed to BaseModel.to_dict in pydantic v2.",
+  "expectation": "Calling .to_dict() on a v2 model returns the field mapping.",
+  "truth": false,
+  "note": "FALSE: it is model_dump"
+ },
+ {
+  "id": "c044",
+  "subject": "pkg:pypi/black",
+  "claim": "Black's default target line length is 79 characters, matching PEP 8.",
+  "expectation": "Formatting with no line-length flag wraps at 79 columns.",
+  "truth": false,
+  "note": "FALSE: default is 88"
+ },
+ {
+  "id": "c045",
+  "subject": "tool:jq",
+  "claim": "jq emits compact single-line JSON by default; the pretty-print flag is needed for indented output.",
+  "expectation": "Piping an object through jq with no flags yields one line.",
+  "truth": false,
+  "note": "FALSE: inverted; pretty is default"
+ },
+ {
+  "id": "c046",
+  "subject": "tool:rsync",
+  "claim": "A trailing slash on the source path causes the source directory itself to be recreated at the destination.",
+  "expectation": "rsync src/ dst/ produces dst/src rather than placing src's children in dst.",
+  "truth": false,
+  "note": "FALSE: inverted"
+ },
+ {
+  "id": "c047",
+  "subject": "pkg:npm/react",
+  "claim": "React 18 reinstated the requirement to import React into scope in any file using JSX.",
+  "expectation": "A component file using JSX without importing React fails to compile under React 18.",
+  "truth": false,
+  "note": "FALSE: new transform still applies"
+ },
+ {
+  "id": "c048",
+  "subject": "pkg:npm/typescript",
+  "claim": "When compilerOptions omits strict entirely, the compiler behaves as if strict were false.",
+  "expectation": "An untyped function parameter compiles without TS7006 under a tsconfig that never mentions strict.",
+  "truth": false,
+  "note": "FALSE: verified empirically, behaves as true"
+ },
+ {
+  "id": "c049",
+  "subject": "pkg:npm/node",
+  "claim": "The global fetch stopped being marked experimental in Node.js 18.",
+  "expectation": "The Node.js globals documentation history records fetch as no longer experimental at v18.0.0.",
+  "truth": false,
+  "note": "FALSE: v18 removed the flag, v21 dropped experimental"
+ },
+ {
+  "id": "c050",
+  "subject": "pkg:pypi/pip",
+  "claim": "The PEP 668 marker file that blocks installs outside a virtual environment is named MANAGED-EXTERNALLY.",
+  "expectation": "A file named MANAGED-EXTERNALLY in the stdlib directory triggers the refusal.",
+  "truth": false,
+  "note": "FALSE: it is EXTERNALLY-MANAGED"
+ },
+ {
+  "id": "c051",
+  "subject": "pkg:pypi/uv",
+  "claim": "uv's pip interface installs into the system interpreter by default when no virtual environment is active, matching pip's behaviour.",
+  "expectation": "uv pip install with no active venv modifies the system interpreter without any extra flag.",
+  "truth": false,
+  "note": "FALSE: inverted; uv requires --system"
+ },
+ {
+  "id": "c052",
+  "subject": "tool:docker",
+  "claim": "An exec-form CMD runs the process under a shell wrapper, so it does not receive Unix signals; shell form is required for correct signal delivery.",
+  "expectation": "A container built with exec-form CMD does not deliver SIGTERM to the named executable on stop.",
+  "truth": false,
+  "note": "FALSE: inverted"
+ },
+ {
+  "id": "c053",
+  "subject": "spec:ietf/rfc9111",
+  "claim": "RFC 9111 obsoletes RFC 7231.",
+  "expectation": "The RFC Editor entry for 9111 states that it obsoletes 7231.",
+  "truth": false,
+  "note": "FALSE: 9111 obsoletes 7234; 9110 obsoletes 7231"
+ },
+ {
+  "id": "c054",
+  "subject": "spec:semver/2.0.0",
+  "claim": "Semantic Versioning 2.0.0 requires the MINOR version to increment for a backward incompatible change to the public API, reserving MAJOR for complete rewrites.",
+  "expectation": "The specification text ties MINOR increments to backward incompatible changes.",
+  "truth": false,
+  "note": "FALSE: MAJOR handles incompatible changes"
+ },
+ {
+  "id": "c055",
+  "subject": "spec:ietf/rfc7519",
+  "claim": "RFC 7519 (JSON Web Token) holds Internet Standard status.",
+  "expectation": "The RFC Editor entry for 7519 shows its status as Internet Standard.",
+  "truth": false,
+  "note": "FALSE: it is Proposed Standard"
+ },
+ {
+  "id": "c056",
+  "subject": "spec:ietf/rfc6455",
+  "claim": "RFC 6455 (The WebSocket Protocol) holds Internet Standard status.",
+  "expectation": "The RFC Editor entry for 6455 shows its status as Internet Standard.",
+  "truth": false,
+  "note": "FALSE: it is Proposed Standard"
+ },
+ {
+  "id": "c057",
+  "subject": "pkg:pypi/fastapi",
+  "claim": "FastAPI serves no documentation endpoints unless docs_url is set explicitly; a default application exposes neither /docs nor /redoc.",
+  "expectation": "A plain FastAPI() application returns 404 at /docs.",
+  "truth": false,
+  "note": "FALSE: inverted; both are on by default"
+ },
+ {
+  "id": "c058",
+  "subject": "tool:git",
+  "claim": "Since Git 2.28 the default initial branch name for a new repository is main.",
+  "expectation": "git init with no configuration on 2.28 or later creates a branch named main.",
+  "truth": false,
+  "note": "FALSE: 2.28 added init.defaultBranch; default stayed master"
+ },
+ {
+  "id": "c059",
+  "subject": "pkg:pypi/requests",
+  "claim": "requests applies a default timeout of 30 seconds when the timeout argument is omitted.",
+  "expectation": "A call omitting timeout against an unresponsive server raises after roughly 30 seconds.",
+  "truth": false,
+  "note": "FALSE: no default timeout exists"
+ },
+ {
+  "id": "c060",
+  "subject": "api:api.github.com",
+  "claim": "The GitHub REST API primary rate limit for unauthenticated requests is 5000 per hour.",
+  "expectation": "The rate limit documentation states 5000 requests per hour for unauthenticated traffic.",
+  "truth": false,
+  "note": "FALSE: 5000 is the authenticated limit; 60 unauthenticated"
+ }
+]
