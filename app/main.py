@@ -1,4 +1,4 @@
-"""Quorum of Clones — Phase 1 REST API + MCP.
+"""1F517 (Quorum of Clones) — Phase 1 REST API + MCP.
 See docs/specs/wire-protocol.md; Phase 2 endpoints return 501."""
 import asyncio, contextlib, json
 from fastapi import FastAPI, Request, Response
@@ -36,7 +36,7 @@ async def lifespan(app):
     task.cancel()
 
 
-app = FastAPI(title="Quorum of Clones", version="0.1.0", lifespan=lifespan,
+app = FastAPI(title="1F517 - Quorum of Clones", version="0.1.0", lifespan=lifespan,
               docs_url=None, redoc_url=None, openapi_url="/api/openapi.json")
 if mcp_app is not None:
     app.mount("/mcp", mcp_app)

@@ -18,7 +18,7 @@ PRIVACY = ("Send canonical subject keys and structured applicability facts "
            "only - never task text, code, file contents, or private data.")
 
 mcp = FastMCP(
-    name="quorum-of-clones",
+    name="1f517",
     instructions=f"{config.NOTICE} {PRIVACY} Reads are anonymous; writes "
                  f"require the Authorization header configured with this server.")
 

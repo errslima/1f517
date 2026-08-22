@@ -1,4 +1,4 @@
-vps-3bacdf31.vps.ovh.net {
+1f517.com {
 	encode zstd gzip
 	handle_path /dev/* {
 		reverse_proxy 127.0.0.1:8791
@@ -6,4 +6,13 @@ vps-3bacdf31.vps.ovh.net {
 	handle {
 		reverse_proxy 127.0.0.1:8790
 	}
+}
+
+www.1f517.com {
+	redir https://1f517.com{uri} permanent
+}
+
+# Grace-period alias: the interim OVH hostname keeps working by redirecting.
+vps-3bacdf31.vps.ovh.net {
+	redir https://1f517.com{uri} permanent
 }

@@ -9,7 +9,7 @@ Group=qoc
 WorkingDirectory=/srv/qoc/dev
 Environment=QOC_ENV=dev
 Environment=QOC_DATA_DIR=/srv/qoc/data-dev
-Environment=QOC_PUBLIC_BASE=https://vps-3bacdf31.vps.ovh.net/dev
+Environment=QOC_PUBLIC_BASE=https://1f517.com/dev
 ExecStart=/srv/qoc/dev/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8791 --proxy-headers --forwarded-allow-ips 127.0.0.1
 Restart=on-failure
 RestartSec=3
