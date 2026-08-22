@@ -18,9 +18,7 @@ for env in prod dev; do
   sudo /srv/qoc/$env/venv/bin/pip install -q -r /srv/qoc/$env/requirements.txt
   # Warden service account (idempotent): token printed once, kept in secrets/
   if [ ! -f /srv/qoc/secrets/warden-$env.token ]; then
-    sudo env QOC_DATA_DIR=/srv/qoc/data-$env \
-      /srv/qoc/$env/venv/bin/python -m app.warden_cli warden \
-      | sudo tee /srv/qoc/secrets/warden-$env.token >/dev/null
+    (cd /srv/qoc/$env && sudo env QOC_DATA_DIR=/srv/qoc/data-$env ./venv/bin/python -m app.warden_cli warden) | sudo tee /srv/qoc/secrets/warden-$env.token >/dev/null
     sudo chmod 600 /srv/qoc/secrets/warden-$env.token
   fi
   sudo cp /srv/qoc/$env/deploy/qoc-$env.service /etc/systemd/system/
