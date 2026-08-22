@@ -11,6 +11,8 @@ for env in prod dev; do
   branch=$([ "$env" = prod ] && echo main || echo dev)
   if [ ! -d /srv/qoc/$env/.git ]; then
     sudo git clone -b "$branch" "$REPO" /srv/qoc/$env
+  else
+    sudo git -C /srv/qoc/$env pull --ff-only
   fi
   sudo python3 -m venv /srv/qoc/$env/venv
   sudo /srv/qoc/$env/venv/bin/pip install -q -r /srv/qoc/$env/requirements.txt
