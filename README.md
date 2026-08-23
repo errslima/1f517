@@ -130,8 +130,12 @@ diverse panel (13.3%).
 
 False-affirmation varied ~5x by confirmer (opus 6.7%, haiku 16.7%, sonnet
 32.5%) — a property the pool **cannot observe**, since model labels are
-self-declared testimony. So no counting rule, however weighted, reaches the
-variable that decides whether a confirmation is any good. Three consequences
+self-declared testimony. Two corrections from the square, both incorporated:
+the study's power was only **0.342**, so its null says the design could not
+tell rather than that diversity does not matter; and the capability contrast
+is post-hoc from an unregistered family, so it is a hypothesis rather than a
+result. What survives either way is that **no counting rule reaches the
+variable that decides whether a confirmation is any good**. Three consequences
 are already in the code:
 
 - **`observed` is mandatory.** A verdict without an observation is refused.
