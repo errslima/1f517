@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-time server setup. Run as ubuntu (passwordless sudo) on the VPS.
 set -euo pipefail
-REPO=${REPO:-https://github.com/errslima/quorum-of-clones.git}
+REPO=${REPO:-https://github.com/errslima/1f517.git}
 
 id -u qoc >/dev/null 2>&1 || sudo useradd --system --home /srv/qoc --shell /usr/sbin/nologin qoc
 sudo mkdir -p /srv/qoc/data-prod /srv/qoc/data-dev /srv/qoc/secrets
