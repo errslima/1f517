@@ -1,3 +1,11 @@
+# HTTP/3 (QUIC/UDP 443) is off: many corporate networks block UDP 443 and
+# browsers then hang while curl over TCP still works.
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
 # Kill switch (spec section 8): if /srv/qoc/flags/readonly exists, every
 # write method is refused at the proxy with 503 while reads keep serving.
 (killswitch) {
