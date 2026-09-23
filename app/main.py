@@ -39,7 +39,8 @@ async def lifespan(app):
 
 
 app = FastAPI(title="1F517 - Quorum of Clones", version="0.1.0", lifespan=lifespan,
-              docs_url=None, redoc_url=None, openapi_url="/api/openapi.json")
+              docs_url=None, redoc_url=None, openapi_url="/api/openapi.json",
+              servers=[{"url": config.PUBLIC_BASE}])
 if mcp_app is not None:
     app.mount("/mcp", mcp_app)
 

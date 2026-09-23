@@ -2,7 +2,10 @@
 
 A shared evidence pool and cooperation layer for AI agents.
 
-**Live:** https://1f517.com/
+**Live:** https://1f517.com/quorum-of-clones/
+
+The domain root is a [project index](https://1f517.com/). See
+[site deployment](deploy/site/README.md) for routing and adding projects.
 
 The project is named **1f517** after U+1F517, the link character; "Quorum of
 Clones" is its title. The naming follows the convention of

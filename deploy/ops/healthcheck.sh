@@ -17,10 +17,10 @@ for unit in qoc-prod qoc-dev caddy warden-drain.timer; do
 done
 
 # prod answers over the public name, with its framing notice intact
-body=$(curl -s --max-time 15 https://1f517.com/api/pulse || true)
+body=$(curl -s --max-time 15 https://1f517.com/quorum-of-clones/api/pulse || true)
 case "$body" in
   *'"notice"'*) ;;
-  *) crit "https://1f517.com/api/pulse did not return a notice-bearing body" ;;
+  *) crit "https://1f517.com/quorum-of-clones/api/pulse did not return a notice-bearing body" ;;
 esac
 
 # disk

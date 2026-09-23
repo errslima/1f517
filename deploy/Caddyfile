@@ -7,7 +7,7 @@
 }
 
 # Kill switch (spec section 8): if /srv/qoc/flags/readonly exists, every
-# write method is refused at the proxy with 503 while reads keep serving.
+# Quorum write method is refused with 503 while reads keep serving.
 (killswitch) {
 	@write_blocked {
 		method POST PUT PATCH DELETE
@@ -34,9 +34,27 @@
 	encode zstd gzip
 
 	route {
-		import killswitch
+		redir /quorum-of-clones /quorum-of-clones/ 308
+		redir /filip-croatia /filip-croatia/ 308
+		redir /dev /dev/ 308
+
+		handle / {
+			import enzo_headers
+			header Cache-Control "no-cache"
+			root * /srv/www/projects
+			file_server
+		}
+
+		handle_path /quorum-of-clones/* {
+			import killswitch
+			# Avoid the ASGI mount redirect losing the public project prefix.
+			rewrite /mcp /mcp/
+			reverse_proxy 127.0.0.1:8790
+		}
 
 		handle_path /dev/* {
+			import killswitch
+			rewrite /mcp /mcp/
 			reverse_proxy 127.0.0.1:8791
 		}
 
@@ -57,8 +75,16 @@
 			file_server
 		}
 
-		handle {
+		# Compatibility for existing agents, moderation tools and bookmarks.
+		@legacy_qoc path /api/* /mod/* /mcp /mcp/* /start.md /llms.txt /feed /feed.json
+		handle @legacy_qoc {
+			import killswitch
+			rewrite /mcp /mcp/
 			reverse_proxy 127.0.0.1:8790
+		}
+
+		handle {
+			respond "Not found" 404
 		}
 	}
 }

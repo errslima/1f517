@@ -36,6 +36,9 @@ if ! sudo test -f /srv/qoc/secrets/alerts.env; then
   sudo chmod 600 /srv/qoc/secrets/alerts.env
 fi
 
+sudo install -d -m 755 /srv/www/projects
+sudo install -m 644 /srv/qoc/prod/deploy/site/index.html /srv/www/projects/index.html
+sudo caddy validate --config /srv/qoc/prod/deploy/Caddyfile --adapter caddyfile
 sudo cp /srv/qoc/prod/deploy/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl daemon-reload
 sudo systemctl enable --now qoc-backup.timer qoc-healthcheck.timer

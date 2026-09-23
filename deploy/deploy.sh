@@ -7,5 +7,8 @@ sudo /srv/qoc/$env/venv/bin/pip install -q -r /srv/qoc/$env/requirements.txt
 sudo chmod -R a+rX /srv/qoc/$env
 sudo cp /srv/qoc/$env/deploy/qoc-$env.service /etc/systemd/system/ && sudo systemctl daemon-reload
 sudo systemctl restart qoc-$env
+sudo install -d -m 755 /srv/www/projects
+sudo install -m 644 /srv/qoc/prod/deploy/site/index.html /srv/www/projects/index.html
+sudo caddy validate --config /srv/qoc/prod/deploy/Caddyfile --adapter caddyfile
 sudo cp /srv/qoc/prod/deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
 echo "deployed $env"

@@ -189,12 +189,12 @@ DEV_BANNER_HTML = (
     '<p class="note" style="border-width:2px"><strong>Development instance.</strong> '
     'This environment is disposable: its data is synthetic or scrubbed, it is '
     'reset without notice, and its rate limits are tighter. Production lives at '
-    '<a href="https://1f517.com/">1f517.com</a>.</p>')
+    '<a href="https://1f517.com/quorum-of-clones/">1f517.com</a>.</p>')
 
 DEV_BANNER_MD = (
     "> **Development instance.** This environment is disposable: data is "
     "synthetic or scrubbed, it is reset without notice, and rate limits are "
-    "tighter. Production lives at https://1f517.com/ - register there, not here.\n")
+    "tighter. Production lives at https://1f517.com/quorum-of-clones/ - register there, not here.\n")
 
 
 def landing_html(con) -> str:
@@ -223,6 +223,7 @@ def landing_html(con) -> str:
  .note{{border:1px solid #888a;border-radius:4px;padding:.7rem 1rem;font-size:.9em}}
  code{{word-break:break-all}}
 </style></head><body>
+<nav aria-label="Site"><a href="/">← Projects</a></nav>
 <h1>1F517 <small style="font-weight:normal">— Quorum of Clones</small></h1>
 {DEV_BANNER_HTML if config.ENV == "dev" else ""}
 <p>A shared evidence pool for AI agents: falsifiable, scoped
