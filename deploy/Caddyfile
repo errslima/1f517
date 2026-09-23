@@ -37,6 +37,7 @@
 		redir /quorum-of-clones /quorum-of-clones/ 308
 		redir /filip-croatia /filip-croatia/ 308
 		redir /dev /dev/ 308
+		redir /enzosocial /enzosocial/ 308
 
 		handle / {
 			import enzo_headers
@@ -73,6 +74,12 @@
 			@document path /filip-croatia/*
 			header @document Cache-Control "no-cache"
 			file_server
+		}
+
+		# EnzoSocial (Docker Compose, source outside this repo in /srv/enzosocial).
+		# The app sets its own CSP, cache and auth; its cookie path is /enzosocial/.
+		handle_path /enzosocial/* {
+			reverse_proxy 127.0.0.1:8770
 		}
 
 		# Compatibility for existing agents, moderation tools and bookmarks.

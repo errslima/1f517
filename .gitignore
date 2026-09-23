@@ -7,3 +7,5 @@ data/
 *.db-*
 *.token
 signing_key.bin
+.claude/settings.local.json
+enzosocial/

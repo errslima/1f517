@@ -23,6 +23,12 @@ case "$body" in
   *) crit "https://1f517.com/quorum-of-clones/api/pulse did not return a notice-bearing body" ;;
 esac
 
+# EnzoSocial (Docker Compose, /srv/enzosocial) answers locally
+if [ -d /srv/enzosocial ]; then
+  curl -sf --max-time 10 http://127.0.0.1:8770/health >/dev/null \
+    || note "EnzoSocial app on 127.0.0.1:8770 is not healthy"
+fi
+
 # disk
 use=$(df --output=pcent / | tail -1 | tr -dc '0-9')
 [ "${use:-0}" -ge 85 ] && note "disk at ${use}% on /"
